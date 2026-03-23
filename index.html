@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>BMC Edit</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/jspdf@latest/dist/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" integrity="sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js" integrity="sha384-en/ztfPSRkGfME4KIm05joYXynqzUgbsG5nMrj/xEFAHXkeZfO3yMK8QQ+mP7p1/" crossorigin="anonymous"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -935,7 +935,7 @@ body {
   <div class="modal-box">
     <div class="modal-title">Connect AI Assistant</div>
     <div class="modal-desc">
-      Enter your Claude API key to enable AI features. The key stays on your machine and is only used for direct API calls.
+      Enter your Claude API key to enable AI features. The key is stored securely on your machine (not in the browser) and is only used for direct API calls.
       You can get one at <b>console.anthropic.com</b>.
     </div>
     <input class="modal-input" id="apiKeyInput" type="password" placeholder="sk-ant-api03-…">
@@ -1058,11 +1058,13 @@ function renderItems(key) {
   container.innerHTML = '';
   const items = canvasData.blocks[key] || [];
   items.forEach((html, idx) => {
+    const safe = sanitizeHtml(html);
+    canvasData.blocks[key][idx] = safe; // persist sanitized version
     const item = document.createElement('div');
     item.className = 'item';
     item.innerHTML = `
       <span class="item-bullet"></span>
-      <div class="item-text" contenteditable="true" data-key="${key}" data-idx="${idx}">${html}</div>
+      <div class="item-text" contenteditable="true" data-key="${key}" data-idx="${idx}">${safe}</div>
       <button class="item-delete" onclick="deleteItem('${key}', ${idx})" title="Remove">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
@@ -1076,6 +1078,41 @@ function renderItems(key) {
 
 function escHtml(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── HTML sanitizer (XSS protection) ──
+const ALLOWED_TAGS = new Set(['B', 'STRONG', 'SPAN']);
+const ALLOWED_CLASSES = new Set(['hl-yellow', 'hl-green', 'hl-pink']);
+
+function sanitizeHtml(html) {
+  const doc = new DOMParser().parseFromString(`<div>${html}</div>`, 'text/html');
+  const root = doc.body.firstChild;
+  return sanitizeNode(root);
+}
+
+function sanitizeNode(node) {
+  let out = '';
+  for (const child of node.childNodes) {
+    if (child.nodeType === Node.TEXT_NODE) {
+      out += escHtml(child.textContent);
+    } else if (child.nodeType === Node.ELEMENT_NODE) {
+      if (ALLOWED_TAGS.has(child.tagName)) {
+        const tag = child.tagName.toLowerCase();
+        let attrs = '';
+        if (tag === 'span') {
+          // Only allow known highlight classes
+          const cls = Array.from(child.classList).filter(c => ALLOWED_CLASSES.has(c));
+          if (cls.length === 0) { out += sanitizeNode(child); continue; }
+          attrs = ` class="${cls.join(' ')}"`;
+        }
+        out += `<${tag}${attrs}>${sanitizeNode(child)}</${tag}>`;
+      } else {
+        // Strip tag but keep content
+        out += sanitizeNode(child);
+      }
+    }
+  }
+  return out;
 }
 
 // ── Data operations ──
@@ -1393,19 +1430,20 @@ function showLoading(on) { document.getElementById('loading').classList.toggle('
 // ── AI Mode ──
 // ═══════════════════════════════════════
 let aiEnabled = false;
-let aiApiKey = localStorage.getItem('bmc_ai_key') || '';
+let aiHasKey = false;
 const aiHistory = [];
 
-function toggleAI() {
+async function toggleAI() {
   if (!aiEnabled) {
-    // Check for stored key
-    if (aiApiKey) {
+    // Check for server-side key
+    const res = await api('GET', '/api/has-key');
+    if (res.has_key) {
+      aiHasKey = true;
       enableAI();
     } else {
       openApiKeyModal();
     }
   } else {
-    // Toggle sidebar
     const sidebar = document.getElementById('aiSidebar');
     sidebar.classList.toggle('open');
   }
@@ -1422,17 +1460,18 @@ function enableAI() {
 
 function openApiKeyModal() {
   document.getElementById('apiKeyModal').classList.add('open');
-  document.getElementById('apiKeyInput').value = aiApiKey;
+  document.getElementById('apiKeyInput').value = '';
   document.getElementById('apiKeyInput').focus();
 }
 function closeApiKeyModal() {
   document.getElementById('apiKeyModal').classList.remove('open');
 }
-function saveApiKey() {
+async function saveApiKey() {
   const key = document.getElementById('apiKeyInput').value.trim();
   if (!key) { toast('Please enter an API key'); return; }
-  aiApiKey = key;
-  localStorage.setItem('bmc_ai_key', key);
+  const res = await api('POST', '/api/set-key', { key });
+  if (res.error) { toast('Error saving key'); return; }
+  aiHasKey = true;
   closeApiKeyModal();
   enableAI();
 }
@@ -1459,7 +1498,7 @@ const ACTION_LABELS = { challenge: 'Challenge', ideate: 'Ideate', educate: 'Educ
 const ACTION_ICONS = { challenge: '\u26A0', ideate: '\u2733', educate: '\u2139', ideate_name: '\u2733' };
 
 async function runAI(action, cellKey) {
-  if (!aiApiKey) { openApiKeyModal(); return; }
+  if (!aiHasKey) { openApiKeyModal(); return; }
 
   // Ensure sidebar is open and on response tab
   document.getElementById('aiSidebar').classList.add('open');
@@ -1478,7 +1517,6 @@ async function runAI(action, cellKey) {
   try {
     const data = getCanvasJSON();
     const res = await api('POST', '/api/ai', {
-      api_key: aiApiKey,
       action,
       cell_key: cellKey || null,
       data,
@@ -1519,7 +1557,7 @@ async function runAI(action, cellKey) {
 }
 
 async function aiIdeateName() {
-  if (!aiApiKey) { openApiKeyModal(); return; }
+  if (!aiHasKey) { openApiKeyModal(); return; }
   document.getElementById('aiSidebar').classList.add('open');
   showAITab('response');
   document.getElementById('aiLoading').classList.add('active');
@@ -1529,7 +1567,6 @@ async function aiIdeateName() {
   try {
     const data = getCanvasJSON();
     const res = await api('POST', '/api/ai', {
-      api_key: aiApiKey,
       action: 'ideate_name',
       data,
     });
@@ -1577,13 +1614,19 @@ function renderHistory() {
   });
 }
 
-// Auto-enable AI if key exists
-if (aiApiKey) {
-  aiEnabled = true;
-  document.body.classList.add('ai-enabled');
-  document.body.classList.add('show-help');
-  document.getElementById('aiToggleBtn').classList.add('ai-active');
-}
+// Auto-enable AI if server has a key
+(async () => {
+  try {
+    const res = await api('GET', '/api/has-key');
+    if (res.has_key) {
+      aiHasKey = true;
+      aiEnabled = true;
+      document.body.classList.add('ai-enabled');
+      document.body.classList.add('show-help');
+      document.getElementById('aiToggleBtn').classList.add('ai-active');
+    }
+  } catch {}
+})();
 
 // ── Keyboard shortcuts ──
 document.addEventListener('keydown', e => {

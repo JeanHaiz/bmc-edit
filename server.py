@@ -4,6 +4,8 @@
 import http.server
 import json
 import os
+import re
+import stat
 import sys
 import urllib.request
 import webbrowser
@@ -11,8 +13,11 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 RECENT_FILE = Path.home() / ".bmc-edit-recent.json"
+KEY_FILE = Path.home() / ".bmc-edit-key"
 PORT = 8470
 HOST = "127.0.0.1"
+ALLOWED_ORIGIN = f"http://{HOST}:{PORT}"
+MAX_BODY_SIZE = 10 * 1024 * 1024  # 10 MB
 
 EMPTY_CANVAS = {
     "title": "Untitled Canvas",
@@ -31,11 +36,49 @@ EMPTY_CANVAS = {
 }
 
 
+# ── API key storage (server-side, file with 0600 permissions) ──
+
+def load_api_key() -> str:
+    if KEY_FILE.exists():
+        try:
+            return KEY_FILE.read_text().strip()
+        except Exception:
+            return ""
+    return ""
+
+
+def save_api_key(key: str):
+    KEY_FILE.write_text(key)
+    KEY_FILE.chmod(stat.S_IRUSR | stat.S_IWUSR)  # 0600
+
+
+def delete_api_key():
+    if KEY_FILE.exists():
+        KEY_FILE.unlink()
+
+
+# ── File path validation ──
+
+def _validate_json_path(filepath: str) -> str | None:
+    """Validate that a path is safe for read/write. Returns resolved path or None."""
+    if not filepath:
+        return None
+    try:
+        p = Path(filepath).resolve()
+    except (ValueError, OSError):
+        return None
+    # Must end in .json
+    if p.suffix.lower() != ".json":
+        return None
+    return str(p)
+
+
+# ── Recent files ──
+
 def load_recent() -> list[dict]:
     if RECENT_FILE.exists():
         try:
             data = json.loads(RECENT_FILE.read_text())
-            # Filter out files that no longer exist
             return [r for r in data if Path(r["path"]).exists()][:12]
         except Exception:
             return []
@@ -48,14 +91,14 @@ def save_recent(entries: list[dict]):
 
 def add_recent(filepath: str):
     entries = load_recent()
-    # Remove if already present
     entries = [e for e in entries if e["path"] != filepath]
     entries.insert(0, {"path": filepath, "name": Path(filepath).stem})
     save_recent(entries)
 
 
+# ── File dialogs (macOS osascript) ──
+
 def _pick_file_open() -> str | None:
-    """Use macOS native file dialog via osascript."""
     import subprocess
 
     try:
@@ -79,7 +122,6 @@ def _pick_file_open() -> str | None:
 
 
 def _pick_file_save() -> str | None:
-    """Use macOS native save dialog via osascript."""
     import subprocess
 
     try:
@@ -103,6 +145,8 @@ def _pick_file_save() -> str | None:
     except Exception:
         return None
 
+
+# ── AI ──
 
 BLOCK_LABELS = {
     "key_partners": "Key Partners",
@@ -130,7 +174,6 @@ BLOCK_DESCRIPTIONS = {
 
 
 def _call_claude(api_key: str, system_prompt: str, user_prompt: str) -> str:
-    """Call Claude API using only stdlib."""
     url = "https://api.anthropic.com/v1/messages"
     payload = json.dumps({
         "model": "claude-sonnet-4-20250514",
@@ -154,8 +197,11 @@ def _call_claude(api_key: str, system_prompt: str, user_prompt: str) -> str:
     return result["content"][0]["text"]
 
 
+def _strip_html(text: str) -> str:
+    return re.sub(r"<[^>]+>", "", text).strip()
+
+
 def _build_context(data: dict, cell_key: str | None) -> str:
-    """Build a text representation of the canvas or a specific cell."""
     company = data.get("company_name", "")
     title = data.get("title", "Untitled")
     lines = []
@@ -172,9 +218,7 @@ def _build_context(data: dict, cell_key: str | None) -> str:
             lines.append(f"({desc})")
         if items:
             for it in items:
-                # Strip HTML tags for the AI
-                import re
-                clean = re.sub(r"<[^>]+>", "", it).strip()
+                clean = _strip_html(it)
                 if clean:
                     lines.append(f"- {clean}")
         else:
@@ -187,9 +231,8 @@ def _build_context(data: dict, cell_key: str | None) -> str:
             if desc:
                 lines.append(f"({desc})")
             if items:
-                import re
                 for it in items:
-                    clean = re.sub(r"<[^>]+>", "", it).strip()
+                    clean = _strip_html(it)
                     if clean:
                         lines.append(f"- {clean}")
             else:
@@ -199,15 +242,15 @@ def _build_context(data: dict, cell_key: str | None) -> str:
 
 
 def handle_ai(body: dict) -> dict:
-    api_key = body.get("api_key", "")
+    api_key = load_api_key()
     action = body.get("action", "")
-    cell_key = body.get("cell_key")  # None = whole doc
+    cell_key = body.get("cell_key")
     canvas_data = body.get("data", {})
 
     if not api_key:
-        return {"error": "API key required"}
+        return {"error": "API key not configured"}
     if action not in ("challenge", "ideate", "educate", "ideate_name"):
-        return {"error": f"Unknown action: {action}"}
+        return {"error": "Unknown action"}
 
     context = _build_context(canvas_data, cell_key)
     target = BLOCK_LABELS.get(cell_key, "the entire canvas") if cell_key else "the entire canvas"
@@ -263,21 +306,33 @@ def handle_ai(body: dict) -> dict:
         err_body = e.read().decode() if e.fp else ""
         try:
             err_data = json.loads(err_body)
-            msg = err_data.get("error", {}).get("message", str(e))
+            msg = err_data.get("error", {}).get("message", "API request failed")
         except Exception:
-            msg = str(e)
+            msg = "API request failed"
         return {"error": msg}
-    except Exception as e:
-        return {"error": str(e)}
+    except Exception:
+        return {"error": "AI request failed"}
 
 
-class Handler(http.server.SimpleHTTPRequestHandler):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, directory=str(Path(__file__).parent), **kwargs)
+# ── HTTP Handler ──
 
+# Read index.html into memory at startup so we don't serve arbitrary files
+_INDEX_HTML = (Path(__file__).parent / "index.html").read_bytes()
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
-        # Quiet logging
-        pass
+        pass  # quiet
+
+    def _check_origin(self) -> bool:
+        """Reject requests from other origins (CSRF/local exfiltration protection)."""
+        origin = self.headers.get("Origin")
+        # Browser requests to same-origin APIs include Origin on POST but not always on GET.
+        # If Origin is present, it must match. If absent, allow (same-origin GET or non-browser).
+        if origin and origin != ALLOWED_ORIGIN:
+            self._json_response({"error": "Forbidden"}, 403)
+            return False
+        return True
 
     def _json_response(self, data, status=200):
         body = json.dumps(data).encode()
@@ -287,87 +342,147 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _read_body(self) -> dict:
+    def _read_body(self) -> dict | None:
         length = int(self.headers.get("Content-Length", 0))
+        if length > MAX_BODY_SIZE:
+            self._json_response({"error": "Request too large"}, 413)
+            return None
         raw = self.rfile.read(length)
-        return json.loads(raw) if raw else {}
+        try:
+            return json.loads(raw) if raw else {}
+        except json.JSONDecodeError:
+            self._json_response({"error": "Invalid JSON"}, 400)
+            return None
 
     def do_GET(self):
+        if not self._check_origin():
+            return
+
         parsed = urlparse(self.path)
-        if parsed.path == "/api/recent":
+        if parsed.path in ("/", "/index.html"):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(_INDEX_HTML)))
+            self.end_headers()
+            self.wfile.write(_INDEX_HTML)
+
+        elif parsed.path == "/api/recent":
             self._json_response(load_recent())
-        elif parsed.path == "/":
-            self.path = "/index.html"
-            super().do_GET()
+
+        elif parsed.path == "/api/has-key":
+            self._json_response({"has_key": bool(load_api_key())})
+
         else:
-            super().do_GET()
+            self._json_response({"error": "Not found"}, 404)
 
     def do_POST(self):
+        if not self._check_origin():
+            return
+
         parsed = urlparse(self.path)
 
         if parsed.path == "/api/open":
             filepath = _pick_file_open()
             if filepath:
+                validated = _validate_json_path(filepath)
+                if not validated:
+                    self._json_response({"error": "Invalid file type"}, 400)
+                    return
                 try:
-                    data = json.loads(Path(filepath).read_text())
-                    add_recent(filepath)
-                    self._json_response({"path": filepath, "data": data})
-                except Exception as e:
-                    self._json_response({"error": str(e)}, 400)
+                    data = json.loads(Path(validated).read_text())
+                    add_recent(validated)
+                    self._json_response({"path": validated, "data": data})
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    self._json_response({"error": "Invalid JSON file"}, 400)
+                except Exception:
+                    self._json_response({"error": "Could not read file"}, 400)
             else:
                 self._json_response({"cancelled": True})
 
         elif parsed.path == "/api/open-path":
             body = self._read_body()
-            filepath = body.get("path", "")
-            if filepath and Path(filepath).exists():
-                try:
-                    data = json.loads(Path(filepath).read_text())
-                    add_recent(filepath)
-                    self._json_response({"path": filepath, "data": data})
-                except Exception as e:
-                    self._json_response({"error": str(e)}, 400)
-            else:
+            if body is None:
+                return
+            filepath = _validate_json_path(body.get("path", ""))
+            if not filepath or not Path(filepath).exists():
                 self._json_response({"error": "File not found"}, 404)
+                return
+            try:
+                data = json.loads(Path(filepath).read_text())
+                add_recent(filepath)
+                self._json_response({"path": filepath, "data": data})
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                self._json_response({"error": "Invalid JSON file"}, 400)
+            except Exception:
+                self._json_response({"error": "Could not read file"}, 400)
 
         elif parsed.path == "/api/save":
             body = self._read_body()
-            filepath = body.get("path")
+            if body is None:
+                return
+            filepath = _validate_json_path(body.get("path", ""))
             data = body.get("data")
-            if filepath and data is not None:
-                try:
-                    Path(filepath).write_text(json.dumps(data, indent=2, ensure_ascii=False))
-                    add_recent(filepath)
-                    self._json_response({"ok": True, "path": filepath})
-                except Exception as e:
-                    self._json_response({"error": str(e)}, 400)
-            else:
-                self._json_response({"error": "Missing path or data"}, 400)
+            if not filepath:
+                self._json_response({"error": "Invalid file path"}, 400)
+                return
+            if data is None:
+                self._json_response({"error": "Missing data"}, 400)
+                return
+            try:
+                Path(filepath).write_text(json.dumps(data, indent=2, ensure_ascii=False))
+                add_recent(filepath)
+                self._json_response({"ok": True, "path": filepath})
+            except Exception:
+                self._json_response({"error": "Could not write file"}, 400)
 
         elif parsed.path == "/api/save-as":
+            # Read body first, before blocking on dialog
+            body = self._read_body()
+            if body is None:
+                return
             filepath = _pick_file_save()
             if filepath:
-                body = self._read_body()
+                validated = _validate_json_path(filepath)
+                if not validated:
+                    self._json_response({"error": "Invalid file type"}, 400)
+                    return
                 data = body.get("data")
-                if data is not None:
-                    try:
-                        Path(filepath).write_text(
-                            json.dumps(data, indent=2, ensure_ascii=False)
-                        )
-                        add_recent(filepath)
-                        self._json_response({"ok": True, "path": filepath})
-                    except Exception as e:
-                        self._json_response({"error": str(e)}, 400)
-                else:
-                    self._json_response({"error": "No data"}, 400)
+                if data is None:
+                    self._json_response({"error": "Missing data"}, 400)
+                    return
+                try:
+                    Path(validated).write_text(
+                        json.dumps(data, indent=2, ensure_ascii=False)
+                    )
+                    add_recent(validated)
+                    self._json_response({"ok": True, "path": validated})
+                except Exception:
+                    self._json_response({"error": "Could not write file"}, 400)
             else:
                 self._json_response({"cancelled": True})
 
         elif parsed.path == "/api/new":
             self._json_response({"data": EMPTY_CANVAS})
 
+        elif parsed.path == "/api/set-key":
+            body = self._read_body()
+            if body is None:
+                return
+            key = body.get("key", "").strip()
+            if not key:
+                self._json_response({"error": "Empty key"}, 400)
+                return
+            save_api_key(key)
+            self._json_response({"ok": True})
+
+        elif parsed.path == "/api/clear-key":
+            delete_api_key()
+            self._json_response({"ok": True})
+
         elif parsed.path == "/api/ai":
             body = self._read_body()
+            if body is None:
+                return
             result = handle_ai(body)
             status = 400 if "error" in result else 200
             self._json_response(result, status)

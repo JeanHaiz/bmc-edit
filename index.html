@@ -1,0 +1,1616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BMC Edit</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@latest/dist/jspdf.umd.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #F4F1EC;
+  --surface: #FFFFFF;
+  --border: #D4CFC7;
+  --border-strong: #B8B2A6;
+  --text: #2C2924;
+  --text-secondary: #7A756C;
+  --accent: #C8553D;
+  --accent-hover: #B34830;
+  --accent-soft: #C8553D18;
+  --header-bg: #2C2924;
+  --header-text: #F4F1EC;
+  --block-hover: #FAF8F5;
+  --tag-bg: #EDEAE4;
+  --tag-text: #5A554D;
+  --shadow: 0 1px 3px rgba(44,41,36,0.06), 0 4px 12px rgba(44,41,36,0.04);
+  --shadow-lg: 0 4px 16px rgba(44,41,36,0.08), 0 12px 40px rgba(44,41,36,0.06);
+  --radius: 6px;
+  --radius-lg: 10px;
+  --ai-color: #5B6ABF;
+  --ai-soft: #5B6ABF15;
+  --ai-challenge: #D97706;
+  --ai-ideate: #059669;
+  --ai-educate: #7C3AED;
+}
+
+html { font-size: 15px; }
+body {
+  font-family: 'DM Sans', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Toolbar ── */
+.toolbar {
+  background: var(--header-bg);
+  color: var(--header-text);
+  padding: 0 24px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  user-select: none;
+}
+.toolbar-brand {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 500;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-right: 20px;
+  flex-shrink: 0;
+}
+.toolbar-sep {
+  width: 1px;
+  height: 24px;
+  background: rgba(244,241,236,0.12);
+  margin: 0 8px;
+  flex-shrink: 0;
+}
+.toolbar-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--header-text);
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+  padding: 6px 12px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.toolbar-btn:hover { background: rgba(244,241,236,0.08); border-color: rgba(244,241,236,0.1); }
+.toolbar-btn:active { transform: scale(0.97); }
+.toolbar-btn svg { width: 16px; height: 16px; opacity: 0.7; }
+.toolbar-btn.ai-active { background: var(--ai-color); border-color: var(--ai-color); }
+.toolbar-file {
+  margin-left: auto;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: rgba(244,241,236,0.45);
+  max-width: 400px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 1;
+}
+
+/* ── Recent dropdown ── */
+.recent-wrapper { position: relative; }
+.recent-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  min-width: 340px;
+  max-height: 400px;
+  overflow-y: auto;
+  z-index: 200;
+  display: none;
+  animation: dropIn 0.15s ease;
+}
+.recent-dropdown.open { display: block; }
+@keyframes dropIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.recent-dropdown-header {
+  padding: 12px 16px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.recent-item {
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: background 0.1s;
+  border-bottom: 1px solid var(--tag-bg);
+}
+.recent-item:last-child { border-bottom: none; }
+.recent-item:hover { background: var(--block-hover); }
+.recent-item-name { font-weight: 500; font-size: 13px; margin-bottom: 2px; }
+.recent-item-path {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recent-empty {
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+/* ── Title bar ── */
+.canvas-title-bar {
+  padding: 24px 32px 4px;
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.canvas-title {
+  font-size: 24px;
+  font-weight: 600;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font-family: 'DM Sans', system-ui, sans-serif;
+  flex: 1;
+  min-width: 200px;
+  caret-color: var(--accent);
+}
+.canvas-title::placeholder { color: var(--border-strong); }
+.company-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+}
+.company-input {
+  font-size: 15px;
+  font-weight: 400;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  outline: none;
+  background: var(--surface);
+  color: var(--text);
+  font-family: 'DM Sans', system-ui, sans-serif;
+  padding: 6px 12px;
+  width: 220px;
+  caret-color: var(--accent);
+  transition: border-color 0.15s;
+}
+.company-input:focus { border-color: var(--accent); }
+.company-input::placeholder { color: var(--border-strong); }
+.company-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.company-ideate-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--ai-color);
+  background: var(--ai-soft);
+  color: var(--ai-color);
+  cursor: pointer;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  transition: all 0.15s;
+}
+.ai-enabled .company-ideate-btn { display: flex; }
+.company-ideate-btn:hover { background: var(--ai-color); color: white; }
+
+/* ── Main layout ── */
+.main-area {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+.canvas-wrapper {
+  flex: 1;
+  padding: 12px 32px 32px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.canvas-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr 1fr;
+  grid-template-rows: 1fr 1fr 1fr;
+  gap: 0;
+  border: 2px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  flex: 1;
+  min-height: 600px;
+  overflow: hidden;
+}
+
+.block[data-key="key_partners"]            { grid-column: 1; grid-row: 1 / 3; }
+.block[data-key="key_activities"]          { grid-column: 2; grid-row: 1; }
+.block[data-key="key_resources"]           { grid-column: 2; grid-row: 2; }
+.block[data-key="value_propositions"]      { grid-column: 3; grid-row: 1 / 3; }
+.block[data-key="customer_relationships"]  { grid-column: 4; grid-row: 1; }
+.block[data-key="channels"]               { grid-column: 4; grid-row: 2; }
+.block[data-key="customer_segments"]       { grid-column: 5; grid-row: 1 / 3; }
+.block[data-key="cost_structure"]          { grid-column: 1 / 4; grid-row: 3; }
+.block[data-key="revenue_streams"]         { grid-column: 4 / 6; grid-row: 3; }
+
+.block {
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  transition: background 0.15s ease;
+}
+.block:hover { background: var(--block-hover); }
+.block.drag-over {
+  background: var(--ai-soft);
+  outline: 2px dashed var(--ai-color);
+  outline-offset: -2px;
+}
+.block-header {
+  padding: 12px 14px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.block-icon {
+  width: 18px; height: 18px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.block-icon svg { width: 11px; height: 11px; }
+.block-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  flex: 1;
+}
+.block-help {
+  font-size: 10px;
+  color: var(--border-strong);
+  font-style: italic;
+  padding: 2px 14px 0;
+  line-height: 1.3;
+  display: none;
+}
+.show-help .block-help { display: block; }
+.block-items {
+  flex: 1;
+  padding: 8px 14px 10px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  position: relative;
+}
+.item-bullet {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--border-strong);
+  flex-shrink: 0;
+  margin-top: 7px;
+}
+.item-text {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  padding: 2px 0;
+  caret-color: var(--accent);
+  min-height: 1.45em;
+  word-break: break-word;
+}
+.item-text:empty::before {
+  content: 'Enter item…';
+  color: var(--border);
+  pointer-events: none;
+}
+.item-text b, .item-text strong { font-weight: 600; }
+.hl-yellow { background: #FFF3B0; border-radius: 2px; padding: 0 1px; }
+.hl-green  { background: #C6F6D0; border-radius: 2px; padding: 0 1px; }
+.hl-pink   { background: #FCCFE0; border-radius: 2px; padding: 0 1px; }
+.item-delete {
+  opacity: 0;
+  background: none; border: none; cursor: pointer;
+  color: var(--text-secondary);
+  padding: 2px; margin-top: 3px; border-radius: 3px;
+  transition: all 0.1s; flex-shrink: 0;
+}
+.item:hover .item-delete { opacity: 0.5; }
+.item-delete:hover { opacity: 1 !important; color: var(--accent); background: var(--accent-soft); }
+.item-delete svg { width: 12px; height: 12px; }
+.block-add { padding: 4px 14px 10px; flex-shrink: 0; }
+.block-add button {
+  background: none;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 11px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+  width: 100%;
+}
+.block-add button:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+
+/* ── Format bar ── */
+.format-bar {
+  position: fixed;
+  display: none;
+  align-items: center;
+  gap: 2px;
+  background: var(--header-bg);
+  border-radius: var(--radius);
+  padding: 4px 5px;
+  box-shadow: var(--shadow-lg);
+  z-index: 300;
+  animation: dropIn 0.12s ease;
+}
+.format-bar.visible { display: flex; }
+.format-btn {
+  width: 28px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  background: transparent; border: none; border-radius: 4px;
+  cursor: pointer; color: var(--header-text);
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 13px; font-weight: 600;
+  transition: background 0.1s;
+}
+.format-btn:hover { background: rgba(244,241,236,0.15); }
+.format-sep { width: 1px; height: 18px; background: rgba(244,241,236,0.15); margin: 0 3px; }
+.format-color { width: 16px; height: 16px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; transition: all 0.1s; }
+.format-color:hover { transform: scale(1.2); }
+.format-color-yellow { background: #FFF3B0; }
+.format-color-green  { background: #C6F6D0; }
+.format-color-pink   { background: #FCCFE0; }
+
+/* ── AI Sidebar ── */
+.ai-sidebar {
+  width: 0;
+  overflow: hidden;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  transition: width 0.25s ease;
+  flex-shrink: 0;
+}
+.ai-sidebar.open { width: 340px; }
+.ai-sidebar-inner {
+  width: 340px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.ai-sidebar-header {
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ai-sidebar-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--ai-color);
+  flex: 1;
+}
+.ai-sidebar-close {
+  background: none; border: none; cursor: pointer;
+  color: var(--text-secondary); padding: 4px;
+  border-radius: 4px; transition: all 0.1s;
+}
+.ai-sidebar-close:hover { background: var(--tag-bg); }
+
+/* AI actions section */
+.ai-actions {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.ai-actions-intro {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+  line-height: 1.45;
+}
+.ai-action-chips {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ai-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  cursor: grab;
+  transition: all 0.15s;
+  user-select: none;
+  background: var(--surface);
+}
+.ai-chip:active { cursor: grabbing; }
+.ai-chip:hover { border-color: var(--ai-color); background: var(--ai-soft); }
+.ai-chip.dragging { opacity: 0.5; }
+.ai-chip-icon {
+  width: 28px; height: 28px;
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.ai-chip-icon.challenge { background: #FEF3C7; color: var(--ai-challenge); }
+.ai-chip-icon.ideate    { background: #D1FAE5; color: var(--ai-ideate); }
+.ai-chip-icon.educate   { background: #EDE9FE; color: var(--ai-educate); }
+.ai-chip-text { flex: 1; }
+.ai-chip-name { font-weight: 600; font-size: 13px; }
+.ai-chip-desc { font-size: 11px; color: var(--text-secondary); line-height: 1.3; margin-top: 1px; }
+.ai-chip-use {
+  font-size: 10px;
+  color: var(--border-strong);
+  background: var(--tag-bg);
+  padding: 2px 6px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+/* AI whole-canvas buttons */
+.ai-whole-section {
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 6px;
+}
+.ai-whole-btn {
+  flex: 1;
+  padding: 7px 8px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  text-align: center;
+  transition: all 0.15s;
+  color: var(--text);
+}
+.ai-whole-btn:hover { border-color: var(--ai-color); background: var(--ai-soft); color: var(--ai-color); }
+.ai-whole-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* AI tabs */
+.ai-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+}
+.ai-tab {
+  flex: 1;
+  padding: 10px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: center;
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+  font-family: 'DM Sans', system-ui, sans-serif;
+}
+.ai-tab:hover { color: var(--text); }
+.ai-tab.active { color: var(--ai-color); border-bottom-color: var(--ai-color); }
+
+/* AI response area */
+.ai-response-area {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.ai-response-panel, .ai-history-panel {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 18px;
+  display: none;
+}
+.ai-response-panel.active, .ai-history-panel.active { display: block; }
+
+.ai-response-empty {
+  text-align: center;
+  padding: 32px 16px;
+  color: var(--border-strong);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.ai-response-content {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+.ai-response-meta {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--tag-bg);
+}
+.ai-loading-indicator {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+  color: var(--ai-color);
+  font-size: 13px;
+}
+.ai-loading-indicator.active { display: flex; }
+.ai-loading-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--ai-color);
+  animation: pulse 1s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
+/* AI history */
+.ai-history-item {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--tag-bg);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.ai-history-item:hover { background: var(--block-hover); margin: 0 -18px; padding: 10px 18px; }
+.ai-history-action {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 2px;
+}
+.ai-history-action.challenge { color: var(--ai-challenge); }
+.ai-history-action.ideate { color: var(--ai-ideate); }
+.ai-history-action.educate { color: var(--ai-educate); }
+.ai-history-target {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+.ai-history-preview {
+  font-size: 12px;
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.ai-history-empty {
+  text-align: center;
+  padding: 24px;
+  color: var(--border-strong);
+  font-size: 13px;
+}
+
+/* ── API Key modal ── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(44,41,36,0.4);
+  backdrop-filter: blur(4px);
+  z-index: 500;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal-box {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 28px;
+  width: 420px;
+  max-width: 90vw;
+  animation: dropIn 0.2s ease;
+}
+.modal-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.modal-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 18px;
+  line-height: 1.5;
+}
+.modal-input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s;
+  margin-bottom: 16px;
+}
+.modal-input:focus { border-color: var(--ai-color); }
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.modal-btn {
+  padding: 8px 18px;
+  border-radius: var(--radius);
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+.modal-btn:hover { background: var(--tag-bg); }
+.modal-btn.primary {
+  background: var(--ai-color);
+  color: white;
+  border-color: var(--ai-color);
+}
+.modal-btn.primary:hover { opacity: 0.9; }
+
+/* ── Toast ── */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(80px);
+  background: var(--header-bg);
+  color: var(--header-text);
+  padding: 10px 20px;
+  border-radius: var(--radius-lg);
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: var(--shadow-lg);
+  z-index: 600;
+  opacity: 0;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  pointer-events: none;
+}
+.toast.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ── Unsaved indicator ── */
+.unsaved-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex-shrink: 0; display: none; }
+.unsaved-dot.show { display: block; }
+
+/* ── Scrollbars ── */
+.block-items::-webkit-scrollbar, .ai-response-area::-webkit-scrollbar,
+.ai-response-panel::-webkit-scrollbar, .ai-history-panel::-webkit-scrollbar { width: 4px; }
+.block-items::-webkit-scrollbar-track, .ai-response-area::-webkit-scrollbar-track,
+.ai-response-panel::-webkit-scrollbar-track, .ai-history-panel::-webkit-scrollbar-track { background: transparent; }
+.block-items::-webkit-scrollbar-thumb, .ai-response-area::-webkit-scrollbar-thumb,
+.ai-response-panel::-webkit-scrollbar-thumb, .ai-history-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* ── Print / PDF ── */
+.pdf-rendering .toolbar,
+.pdf-rendering .block-add,
+.pdf-rendering .item-delete,
+.pdf-rendering .format-bar,
+.pdf-rendering .ai-sidebar,
+.pdf-rendering .block-help { display: none !important; }
+.pdf-rendering .canvas-wrapper { padding: 0; }
+.pdf-rendering .canvas-title-bar { padding: 16px 20px 10px; }
+.pdf-rendering .canvas-grid { border-radius: 0; min-height: auto; }
+.pdf-rendering .block:hover { background: var(--surface); }
+
+/* ── Loading ── */
+.loading-overlay {
+  position: fixed; inset: 0;
+  background: rgba(44,41,36,0.3);
+  backdrop-filter: blur(4px);
+  z-index: 400;
+  display: none;
+  align-items: center; justify-content: center;
+}
+.loading-overlay.active { display: flex; }
+.loading-spinner {
+  width: 36px; height: 36px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.kbd { font-family: 'JetBrains Mono', monospace; font-size: 10px; opacity: 0.4; margin-left: 4px; }
+</style>
+</head>
+<body>
+
+<!-- Toolbar -->
+<div class="toolbar">
+  <span class="toolbar-brand">BMC Edit</span>
+  <div class="toolbar-sep"></div>
+  <button class="toolbar-btn" onclick="newCanvas()" title="New canvas">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+    New<span class="kbd">&#8984;N</span>
+  </button>
+  <button class="toolbar-btn" onclick="openFile()" title="Open file">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+    Open<span class="kbd">&#8984;O</span>
+  </button>
+  <div class="recent-wrapper">
+    <button class="toolbar-btn" id="recentBtn" onclick="toggleRecent()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      Recent
+    </button>
+    <div class="recent-dropdown" id="recentDropdown"></div>
+  </div>
+  <div class="toolbar-sep"></div>
+  <button class="toolbar-btn" onclick="saveFile()" title="Save">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+    Save<span class="kbd">&#8984;S</span>
+  </button>
+  <button class="toolbar-btn" onclick="saveFileAs()" title="Save as">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+    Save As<span class="kbd">&#8679;&#8984;S</span>
+  </button>
+  <div class="toolbar-sep"></div>
+  <button class="toolbar-btn" onclick="exportPDF()" title="Export to PDF">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+    PDF
+  </button>
+  <div class="toolbar-sep"></div>
+  <button class="toolbar-btn" id="aiToggleBtn" onclick="toggleAI()" title="AI Assistant">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2a4 4 0 0 1 4 4v1h1a3 3 0 0 1 3 3v1a3 3 0 0 1-3 3h-1v4a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2v-4H7a3 3 0 0 1-3-3v-1a3 3 0 0 1 3-3h1V6a4 4 0 0 1 4-4z"/><circle cx="10" cy="12" r="1"/><circle cx="14" cy="12" r="1"/></svg>
+    AI
+  </button>
+  <span class="unsaved-dot" id="unsavedDot"></span>
+  <span class="toolbar-file" id="filePath">No file &mdash; unsaved</span>
+</div>
+
+<!-- Title & Company -->
+<div class="canvas-title-bar">
+  <input class="canvas-title" id="canvasTitle" type="text" placeholder="Untitled Canvas" value="Untitled Canvas" oninput="markDirty()">
+  <div class="company-field">
+    <span class="company-label">Company</span>
+    <input class="company-input" id="companyName" type="text" placeholder="Company or product name" oninput="markDirty()">
+    <button class="company-ideate-btn" onclick="aiIdeateName()" title="Get name ideas from AI">&#9733;</button>
+  </div>
+</div>
+
+<!-- Main: canvas + AI sidebar -->
+<div class="main-area">
+  <div class="canvas-wrapper">
+    <div class="canvas-grid" id="canvasGrid"></div>
+  </div>
+
+  <!-- AI Sidebar -->
+  <div class="ai-sidebar" id="aiSidebar">
+    <div class="ai-sidebar-inner">
+      <div class="ai-sidebar-header">
+        <span class="ai-sidebar-title">AI Assistant</span>
+        <button class="ai-sidebar-close" onclick="toggleAI()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="ai-actions">
+        <div class="ai-actions-intro">
+          Drag an action onto a section of the canvas, or click "Whole canvas" below to apply it everywhere.
+        </div>
+        <div class="ai-action-chips">
+          <div class="ai-chip" draggable="true" data-action="challenge">
+            <div class="ai-chip-icon challenge">&#9888;</div>
+            <div class="ai-chip-text">
+              <div class="ai-chip-name">Challenge</div>
+              <div class="ai-chip-desc">Ask tough questions about your assumptions</div>
+            </div>
+            <span class="ai-chip-use">drag</span>
+          </div>
+          <div class="ai-chip" draggable="true" data-action="ideate">
+            <div class="ai-chip-icon ideate">&#9733;</div>
+            <div class="ai-chip-text">
+              <div class="ai-chip-name">Ideate</div>
+              <div class="ai-chip-desc">Get fresh ideas and suggestions</div>
+            </div>
+            <span class="ai-chip-use">drag</span>
+          </div>
+          <div class="ai-chip" draggable="true" data-action="educate">
+            <div class="ai-chip-icon educate">&#9432;</div>
+            <div class="ai-chip-text">
+              <div class="ai-chip-name">Educate</div>
+              <div class="ai-chip-desc">Learn what goes here and why it matters</div>
+            </div>
+            <span class="ai-chip-use">drag</span>
+          </div>
+        </div>
+      </div>
+      <div class="ai-whole-section">
+        <button class="ai-whole-btn" onclick="runAI('challenge')">&#9888; Challenge all</button>
+        <button class="ai-whole-btn" onclick="runAI('ideate')">&#9733; Ideate all</button>
+        <button class="ai-whole-btn" onclick="runAI('educate')">&#9432; Educate all</button>
+      </div>
+      <div class="ai-tabs">
+        <button class="ai-tab active" onclick="showAITab('response')">Response</button>
+        <button class="ai-tab" onclick="showAITab('history')">History</button>
+      </div>
+      <div class="ai-response-area">
+        <div class="ai-loading-indicator" id="aiLoading">
+          <div class="ai-loading-dot"></div>
+          Thinking&hellip;
+        </div>
+        <div class="ai-response-panel active" id="aiResponsePanel">
+          <div class="ai-response-empty" id="aiEmptyState">
+            Drag an action onto a canvas section, or use the "whole canvas" buttons above to get started.
+          </div>
+          <div id="aiResponseContent" style="display:none">
+            <div class="ai-response-meta" id="aiResponseMeta"></div>
+            <div class="ai-response-content" id="aiResponseText"></div>
+          </div>
+        </div>
+        <div class="ai-history-panel" id="aiHistoryPanel">
+          <div class="ai-history-empty" id="aiHistoryEmpty">No AI actions yet</div>
+          <div id="aiHistoryList"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Format bar -->
+<div class="format-bar" id="formatBar">
+  <button class="format-btn" onclick="fmtBold()" title="Bold"><b>B</b></button>
+  <div class="format-sep"></div>
+  <button class="format-btn" onclick="fmtHighlight('yellow')" title="Yellow"><div class="format-color format-color-yellow"></div></button>
+  <button class="format-btn" onclick="fmtHighlight('green')" title="Green"><div class="format-color format-color-green"></div></button>
+  <button class="format-btn" onclick="fmtHighlight('pink')" title="Pink"><div class="format-color format-color-pink"></div></button>
+  <div class="format-sep"></div>
+  <button class="format-btn" onclick="fmtClearHighlight()" title="Remove highlight" style="font-size:11px;font-weight:400;">&#10005;</button>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- Loading -->
+<div class="loading-overlay" id="loading"><div class="loading-spinner"></div></div>
+
+<!-- API Key Modal -->
+<div class="modal-overlay" id="apiKeyModal">
+  <div class="modal-box">
+    <div class="modal-title">Connect AI Assistant</div>
+    <div class="modal-desc">
+      Enter your Claude API key to enable AI features. The key stays on your machine and is only used for direct API calls.
+      You can get one at <b>console.anthropic.com</b>.
+    </div>
+    <input class="modal-input" id="apiKeyInput" type="password" placeholder="sk-ant-api03-…">
+    <div class="modal-actions">
+      <button class="modal-btn" onclick="closeApiKeyModal()">Cancel</button>
+      <button class="modal-btn primary" onclick="saveApiKey()">Activate AI</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Block definitions ──
+const BLOCKS = [
+  { key: 'key_partners', label: 'Key Partners', help: 'Who are the key partners and suppliers you need? What resources or activities do they provide?', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>' },
+  { key: 'key_activities', label: 'Key Activities', help: 'What are the most important things your business must do to make the model work?', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>' },
+  { key: 'key_resources', label: 'Key Resources', help: 'What assets are essential? Think people, technology, money, intellectual property.', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>' },
+  { key: 'value_propositions', label: 'Value Propositions', help: 'What problem do you solve? What value do you deliver? Why would customers choose you?', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>' },
+  { key: 'customer_relationships', label: 'Customer Relationships', help: 'How do you interact with customers? Personal? Automated? Community? Self-service?', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>' },
+  { key: 'channels', label: 'Channels', help: 'How do you reach your customers? Sales, web, stores, partners?', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 5.5 20 13.5 16 11 16 8"/></svg>' },
+  { key: 'customer_segments', label: 'Customer Segments', help: 'Who are your most important customers? What groups are you targeting?', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>' },
+  { key: 'cost_structure', label: 'Cost Structure', help: 'What are the biggest costs? Which resources and activities are most expensive?', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="23" y1="6" x2="17" y2="12"/><polyline points="17 6 23 6 23 12"/><line x1="1" y1="18" x2="7" y2="12"/><polyline points="7 18 1 18 1 12"/></svg>' },
+  { key: 'revenue_streams', label: 'Revenue Streams', help: 'How do you make money? What are customers willing to pay for?', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>' },
+];
+const BLOCK_LABELS = {};
+BLOCKS.forEach(b => BLOCK_LABELS[b.key] = b.label);
+
+// ── State ──
+let currentPath = null;
+let dirty = false;
+let canvasData = { title: 'Untitled Canvas', company_name: '', blocks: {} };
+BLOCKS.forEach(b => canvasData.blocks[b.key] = []);
+
+// ── Undo / Redo ──
+const undoStack = [];
+const redoStack = [];
+const MAX_UNDO = 80;
+let undoTimer = null;
+let isUndoRedo = false;
+
+function snapshotState() {
+  document.querySelectorAll('.item-text[contenteditable]').forEach(el => {
+    const key = el.dataset.key;
+    const idx = parseInt(el.dataset.idx);
+    if (key && canvasData.blocks[key]) canvasData.blocks[key][idx] = el.innerHTML;
+  });
+  return JSON.stringify({
+    title: document.getElementById('canvasTitle').value || 'Untitled Canvas',
+    company_name: document.getElementById('companyName').value || '',
+    blocks: canvasData.blocks,
+  });
+}
+function pushUndo() {
+  if (isUndoRedo) return;
+  const snap = snapshotState();
+  if (undoStack.length && undoStack[undoStack.length - 1] === snap) return;
+  undoStack.push(snap);
+  if (undoStack.length > MAX_UNDO) undoStack.shift();
+  redoStack.length = 0;
+}
+function debouncedPushUndo() { clearTimeout(undoTimer); undoTimer = setTimeout(pushUndo, 400); }
+function undo() {
+  if (undoStack.length === 0) return;
+  redoStack.push(snapshotState());
+  applySnapshot(undoStack.pop());
+}
+function redo() {
+  if (redoStack.length === 0) return;
+  undoStack.push(snapshotState());
+  applySnapshot(redoStack.pop());
+}
+function applySnapshot(snap) {
+  isUndoRedo = true;
+  const data = JSON.parse(snap);
+  canvasData = data;
+  document.getElementById('canvasTitle').value = data.title || 'Untitled Canvas';
+  document.getElementById('companyName').value = data.company_name || '';
+  BLOCKS.forEach(b => { if (!canvasData.blocks[b.key]) canvasData.blocks[b.key] = []; });
+  renderGrid();
+  markDirty();
+  isUndoRedo = false;
+}
+
+// ── Render ──
+function renderGrid() {
+  const grid = document.getElementById('canvasGrid');
+  grid.innerHTML = '';
+  BLOCKS.forEach(b => {
+    const block = document.createElement('div');
+    block.className = 'block';
+    block.dataset.key = b.key;
+    block.innerHTML = `
+      <div class="block-header">
+        <div class="block-icon">${b.icon}</div>
+        <span class="block-label">${b.label}</span>
+      </div>
+      <div class="block-help">${b.help}</div>
+      <div class="block-items" id="items-${b.key}"></div>
+      <div class="block-add">
+        <button onclick="addItem('${b.key}')">+ Add item</button>
+      </div>
+    `;
+    // Drop zone for AI actions
+    block.addEventListener('dragover', e => { e.preventDefault(); block.classList.add('drag-over'); });
+    block.addEventListener('dragleave', () => block.classList.remove('drag-over'));
+    block.addEventListener('drop', e => {
+      e.preventDefault();
+      block.classList.remove('drag-over');
+      const action = e.dataTransfer.getData('text/plain');
+      if (['challenge','ideate','educate'].includes(action)) {
+        runAI(action, b.key);
+      }
+    });
+    grid.appendChild(block);
+    renderItems(b.key);
+  });
+}
+
+function renderItems(key) {
+  const container = document.getElementById(`items-${key}`);
+  container.innerHTML = '';
+  const items = canvasData.blocks[key] || [];
+  items.forEach((html, idx) => {
+    const item = document.createElement('div');
+    item.className = 'item';
+    item.innerHTML = `
+      <span class="item-bullet"></span>
+      <div class="item-text" contenteditable="true" data-key="${key}" data-idx="${idx}">${html}</div>
+      <button class="item-delete" onclick="deleteItem('${key}', ${idx})" title="Remove">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    `;
+    container.appendChild(item);
+    const el = item.querySelector('.item-text');
+    el.addEventListener('input', () => { canvasData.blocks[key][idx] = el.innerHTML; markDirty(); });
+    el.addEventListener('keydown', e => handleItemKey(e, key, idx));
+  });
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Data operations ──
+function addItem(key) {
+  if (!canvasData.blocks[key]) canvasData.blocks[key] = [];
+  canvasData.blocks[key].push('');
+  renderItems(key);
+  markDirty();
+  const container = document.getElementById(`items-${key}`);
+  const els = container.querySelectorAll('.item-text');
+  if (els.length) els[els.length - 1].focus();
+}
+
+function deleteItem(key, idx) {
+  canvasData.blocks[key].splice(idx, 1);
+  renderItems(key);
+  markDirty();
+}
+
+function handleItemKey(e, key, idx) {
+  const el = e.target;
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    if (el.textContent.trim() === '') return;
+    canvasData.blocks[key][idx] = el.innerHTML;
+    canvasData.blocks[key].splice(idx + 1, 0, '');
+    renderItems(key);
+    markDirty();
+    const container = document.getElementById(`items-${key}`);
+    const els = container.querySelectorAll('.item-text');
+    if (els[idx + 1]) els[idx + 1].focus();
+  }
+  if (e.key === 'Backspace' && el.textContent.trim() === '') {
+    e.preventDefault();
+    deleteItem(key, idx);
+    const container = document.getElementById(`items-${key}`);
+    const els = container.querySelectorAll('.item-text');
+    const prev = idx - 1;
+    if (prev >= 0 && els[prev]) {
+      els[prev].focus();
+      const range = document.createRange();
+      range.selectNodeContents(els[prev]);
+      range.collapse(false);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  }
+}
+
+function getCanvasJSON() {
+  document.querySelectorAll('.item-text[contenteditable]').forEach(el => {
+    const key = el.dataset.key;
+    const idx = parseInt(el.dataset.idx);
+    if (key && canvasData.blocks[key]) canvasData.blocks[key][idx] = el.innerHTML;
+  });
+  return {
+    title: document.getElementById('canvasTitle').value || 'Untitled Canvas',
+    company_name: document.getElementById('companyName').value || '',
+    blocks: canvasData.blocks,
+  };
+}
+
+function loadCanvasData(data) {
+  canvasData = data;
+  if (!canvasData.company_name) canvasData.company_name = '';
+  document.getElementById('canvasTitle').value = data.title || 'Untitled Canvas';
+  document.getElementById('companyName').value = data.company_name || '';
+  BLOCKS.forEach(b => { if (!canvasData.blocks[b.key]) canvasData.blocks[b.key] = []; });
+  renderGrid();
+  undoStack.length = 0;
+  redoStack.length = 0;
+  pushUndo();
+}
+
+// ── Dirty state ──
+function markDirty() {
+  dirty = true;
+  document.getElementById('unsavedDot').classList.add('show');
+  updateTitle();
+  debouncedPushUndo();
+}
+function markClean() {
+  dirty = false;
+  document.getElementById('unsavedDot').classList.remove('show');
+  updateTitle();
+}
+function updateTitle() {
+  const name = currentPath ? currentPath.split('/').pop() : 'Untitled';
+  document.title = (dirty ? '\u25CF ' : '') + name + ' \u2014 BMC Edit';
+}
+function updateFilePath() {
+  document.getElementById('filePath').textContent = currentPath || 'No file \u2014 unsaved';
+  updateTitle();
+}
+
+// ── API calls ──
+async function api(method, path, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(path, opts);
+  return res.json();
+}
+
+// ── File actions ──
+async function newCanvas() {
+  if (dirty && !confirm('Discard unsaved changes?')) return;
+  const res = await api('POST', '/api/new');
+  loadCanvasData(res.data);
+  currentPath = null;
+  markClean();
+  updateFilePath();
+  toast('New canvas created');
+}
+async function openFile() {
+  if (dirty && !confirm('Discard unsaved changes?')) return;
+  showLoading(true);
+  const res = await api('POST', '/api/open');
+  showLoading(false);
+  if (res.cancelled) return;
+  if (res.error) { toast('Error: ' + res.error); return; }
+  loadCanvasData(res.data);
+  currentPath = res.path;
+  markClean();
+  updateFilePath();
+  toast('Opened');
+}
+async function openRecent(path) {
+  if (dirty && !confirm('Discard unsaved changes?')) return;
+  closeRecent();
+  const res = await api('POST', '/api/open-path', { path });
+  if (res.error) { toast('Error: ' + res.error); return; }
+  loadCanvasData(res.data);
+  currentPath = res.path;
+  markClean();
+  updateFilePath();
+  toast('Opened');
+}
+async function saveFile() {
+  const data = getCanvasJSON();
+  canvasData = data;
+  if (!currentPath) return saveFileAs();
+  const res = await api('POST', '/api/save', { path: currentPath, data });
+  if (res.error) { toast('Error: ' + res.error); return; }
+  markClean();
+  toast('Saved');
+}
+async function saveFileAs() {
+  const data = getCanvasJSON();
+  canvasData = data;
+  showLoading(true);
+  const res = await api('POST', '/api/save-as', { data });
+  showLoading(false);
+  if (res.cancelled) return;
+  if (res.error) { toast('Error: ' + res.error); return; }
+  currentPath = res.path;
+  markClean();
+  updateFilePath();
+  toast('Saved as ' + res.path.split('/').pop());
+}
+async function exportPDF() {
+  toast('Generating PDF\u2026');
+  document.body.classList.add('pdf-rendering');
+  const grid = document.getElementById('canvasGrid');
+  const titleBar = document.querySelector('.canvas-title-bar');
+  const captureDiv = document.createElement('div');
+  captureDiv.style.cssText = 'position:absolute;left:-9999px;top:0;width:1400px;background:#F4F1EC;padding:24px;';
+  captureDiv.appendChild(titleBar.cloneNode(true));
+  const gridClone = grid.cloneNode(true);
+  gridClone.style.minHeight = '700px';
+  captureDiv.appendChild(gridClone);
+  document.body.appendChild(captureDiv);
+  try {
+    const canvas = await html2canvas(captureDiv, { scale: 2, backgroundColor: '#F4F1EC', useCORS: true });
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const imgData = canvas.toDataURL('image/png');
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    const ratio = Math.min(pageW / canvas.width, pageH / canvas.height);
+    const w = canvas.width * ratio;
+    const h = canvas.height * ratio;
+    pdf.addImage(imgData, 'PNG', (pageW - w) / 2, (pageH - h) / 2, w, h);
+    const fileName = (document.getElementById('canvasTitle').value || 'canvas').replace(/[^a-zA-Z0-9_-]/g, '_') + '.pdf';
+    pdf.save(fileName);
+    toast('PDF exported');
+  } catch (err) {
+    toast('PDF export failed');
+    console.error(err);
+  } finally {
+    document.body.removeChild(captureDiv);
+    document.body.classList.remove('pdf-rendering');
+  }
+}
+
+// ── Format bar ──
+let savedSelection = null;
+function saveSelection() {
+  const sel = window.getSelection();
+  if (sel.rangeCount > 0) savedSelection = sel.getRangeAt(0).cloneRange();
+}
+function restoreSelection() {
+  if (!savedSelection) return;
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(savedSelection);
+}
+function showFormatBar() {
+  const sel = window.getSelection();
+  if (sel.isCollapsed || sel.rangeCount === 0) { hideFormatBar(); return; }
+  const anchor = sel.anchorNode;
+  const itemText = anchor && (anchor.nodeType === 3 ? anchor.parentElement : anchor).closest('.item-text');
+  if (!itemText) { hideFormatBar(); return; }
+  saveSelection();
+  const range = sel.getRangeAt(0);
+  const rect = range.getBoundingClientRect();
+  const bar = document.getElementById('formatBar');
+  bar.classList.add('visible');
+  const barW = bar.offsetWidth;
+  let left = rect.left + (rect.width - barW) / 2;
+  left = Math.max(8, Math.min(left, window.innerWidth - barW - 8));
+  bar.style.left = left + 'px';
+  bar.style.top = (rect.top - 40 + window.scrollY) + 'px';
+}
+function hideFormatBar() { document.getElementById('formatBar').classList.remove('visible'); }
+document.addEventListener('selectionchange', () => requestAnimationFrame(showFormatBar));
+document.getElementById('formatBar').addEventListener('mousedown', e => e.preventDefault());
+
+function fmtBold() { restoreSelection(); document.execCommand('bold', false, null); markDirty(); }
+function fmtHighlight(color) {
+  restoreSelection();
+  const sel = window.getSelection();
+  if (sel.isCollapsed || sel.rangeCount === 0) return;
+  const range = sel.getRangeAt(0);
+  const parent = sel.anchorNode.parentElement;
+  if (parent && parent.classList && parent.classList.contains(`hl-${color}`)) {
+    const text = document.createTextNode(parent.textContent);
+    parent.parentNode.replaceChild(text, parent);
+    markDirty(); return;
+  }
+  fmtClearHighlightInRange(range);
+  const span = document.createElement('span');
+  span.className = `hl-${color}`;
+  try { range.surroundContents(span); } catch {
+    const fragment = range.extractContents();
+    span.appendChild(fragment);
+    range.insertNode(span);
+  }
+  sel.removeAllRanges();
+  markDirty();
+}
+function fmtClearHighlight() {
+  restoreSelection();
+  const sel = window.getSelection();
+  if (sel.isCollapsed || sel.rangeCount === 0) return;
+  const parent = sel.anchorNode.parentElement;
+  if (parent && parent.classList && (parent.classList.contains('hl-yellow') || parent.classList.contains('hl-green') || parent.classList.contains('hl-pink'))) {
+    const text = document.createTextNode(parent.textContent);
+    parent.parentNode.replaceChild(text, parent);
+    markDirty();
+  }
+}
+function fmtClearHighlightInRange(range) {
+  const container = range.commonAncestorContainer;
+  const el = container.nodeType === 3 ? container.parentElement : container;
+  if (!el) return;
+  el.querySelectorAll('.hl-yellow, .hl-green, .hl-pink').forEach(hl => {
+    if (range.intersectsNode(hl)) {
+      const text = document.createTextNode(hl.textContent);
+      hl.parentNode.replaceChild(text, hl);
+    }
+  });
+}
+
+// ── Recent ──
+async function toggleRecent() {
+  const dd = document.getElementById('recentDropdown');
+  if (dd.classList.contains('open')) { closeRecent(); return; }
+  const recent = await api('GET', '/api/recent');
+  dd.innerHTML = '<div class="recent-dropdown-header">Recent files</div>';
+  if (recent.length === 0) {
+    dd.innerHTML += '<div class="recent-empty">No recent files</div>';
+  } else {
+    recent.forEach(r => {
+      const item = document.createElement('div');
+      item.className = 'recent-item';
+      item.innerHTML = `<div class="recent-item-name">${escHtml(r.name)}</div><div class="recent-item-path">${escHtml(r.path)}</div>`;
+      item.onclick = () => openRecent(r.path);
+      dd.appendChild(item);
+    });
+  }
+  dd.classList.add('open');
+  setTimeout(() => document.addEventListener('click', closeRecentOnOutside), 0);
+}
+function closeRecent() {
+  document.getElementById('recentDropdown').classList.remove('open');
+  document.removeEventListener('click', closeRecentOnOutside);
+}
+function closeRecentOnOutside(e) { if (!e.target.closest('.recent-wrapper')) closeRecent(); }
+
+// ── Toast ──
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('visible');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('visible'), 2200);
+}
+
+// ── Loading ──
+function showLoading(on) { document.getElementById('loading').classList.toggle('active', on); }
+
+// ═══════════════════════════════════════
+// ── AI Mode ──
+// ═══════════════════════════════════════
+let aiEnabled = false;
+let aiApiKey = localStorage.getItem('bmc_ai_key') || '';
+const aiHistory = [];
+
+function toggleAI() {
+  if (!aiEnabled) {
+    // Check for stored key
+    if (aiApiKey) {
+      enableAI();
+    } else {
+      openApiKeyModal();
+    }
+  } else {
+    // Toggle sidebar
+    const sidebar = document.getElementById('aiSidebar');
+    sidebar.classList.toggle('open');
+  }
+}
+
+function enableAI() {
+  aiEnabled = true;
+  document.body.classList.add('ai-enabled');
+  document.body.classList.add('show-help');
+  document.getElementById('aiToggleBtn').classList.add('ai-active');
+  document.getElementById('aiSidebar').classList.add('open');
+  toast('AI Assistant enabled');
+}
+
+function openApiKeyModal() {
+  document.getElementById('apiKeyModal').classList.add('open');
+  document.getElementById('apiKeyInput').value = aiApiKey;
+  document.getElementById('apiKeyInput').focus();
+}
+function closeApiKeyModal() {
+  document.getElementById('apiKeyModal').classList.remove('open');
+}
+function saveApiKey() {
+  const key = document.getElementById('apiKeyInput').value.trim();
+  if (!key) { toast('Please enter an API key'); return; }
+  aiApiKey = key;
+  localStorage.setItem('bmc_ai_key', key);
+  closeApiKeyModal();
+  enableAI();
+}
+
+// Drag-and-drop from AI chips
+document.querySelectorAll('.ai-chip[draggable]').forEach(chip => {
+  chip.addEventListener('dragstart', e => {
+    e.dataTransfer.setData('text/plain', chip.dataset.action);
+    chip.classList.add('dragging');
+  });
+  chip.addEventListener('dragend', () => chip.classList.remove('dragging'));
+});
+
+// AI tabs
+function showAITab(tab) {
+  document.querySelectorAll('.ai-tab').forEach(t => t.classList.remove('active'));
+  document.querySelector(`.ai-tab:${tab === 'response' ? 'first-child' : 'last-child'}`).classList.add('active');
+  document.getElementById('aiResponsePanel').classList.toggle('active', tab === 'response');
+  document.getElementById('aiHistoryPanel').classList.toggle('active', tab === 'history');
+}
+
+// Run AI action
+const ACTION_LABELS = { challenge: 'Challenge', ideate: 'Ideate', educate: 'Educate', ideate_name: 'Name Ideas' };
+const ACTION_ICONS = { challenge: '\u26A0', ideate: '\u2733', educate: '\u2139', ideate_name: '\u2733' };
+
+async function runAI(action, cellKey) {
+  if (!aiApiKey) { openApiKeyModal(); return; }
+
+  // Ensure sidebar is open and on response tab
+  document.getElementById('aiSidebar').classList.add('open');
+  showAITab('response');
+
+  const target = cellKey ? BLOCK_LABELS[cellKey] : 'Entire Canvas';
+
+  // Show loading
+  document.getElementById('aiLoading').classList.add('active');
+  document.getElementById('aiEmptyState').style.display = 'none';
+  document.getElementById('aiResponseContent').style.display = 'none';
+
+  // Disable buttons
+  document.querySelectorAll('.ai-whole-btn').forEach(b => b.disabled = true);
+
+  try {
+    const data = getCanvasJSON();
+    const res = await api('POST', '/api/ai', {
+      api_key: aiApiKey,
+      action,
+      cell_key: cellKey || null,
+      data,
+    });
+
+    document.getElementById('aiLoading').classList.remove('active');
+    document.querySelectorAll('.ai-whole-btn').forEach(b => b.disabled = false);
+
+    if (res.error) {
+      toast('AI error: ' + res.error);
+      document.getElementById('aiEmptyState').style.display = 'block';
+      return;
+    }
+
+    // Show response
+    document.getElementById('aiResponseMeta').innerHTML =
+      `<strong>${ACTION_ICONS[action]} ${ACTION_LABELS[action]}</strong> &mdash; ${escHtml(target)}`;
+    document.getElementById('aiResponseText').textContent = res.result;
+    document.getElementById('aiResponseContent').style.display = 'block';
+
+    // Add to history
+    aiHistory.unshift({
+      action,
+      target,
+      cellKey: cellKey || null,
+      result: res.result,
+      time: new Date().toLocaleTimeString(),
+    });
+    renderHistory();
+
+  } catch (err) {
+    document.getElementById('aiLoading').classList.remove('active');
+    document.querySelectorAll('.ai-whole-btn').forEach(b => b.disabled = false);
+    toast('AI request failed');
+    console.error(err);
+    document.getElementById('aiEmptyState').style.display = 'block';
+  }
+}
+
+async function aiIdeateName() {
+  if (!aiApiKey) { openApiKeyModal(); return; }
+  document.getElementById('aiSidebar').classList.add('open');
+  showAITab('response');
+  document.getElementById('aiLoading').classList.add('active');
+  document.getElementById('aiEmptyState').style.display = 'none';
+  document.getElementById('aiResponseContent').style.display = 'none';
+
+  try {
+    const data = getCanvasJSON();
+    const res = await api('POST', '/api/ai', {
+      api_key: aiApiKey,
+      action: 'ideate_name',
+      data,
+    });
+    document.getElementById('aiLoading').classList.remove('active');
+    if (res.error) {
+      toast('AI error: ' + res.error);
+      document.getElementById('aiEmptyState').style.display = 'block';
+      return;
+    }
+    document.getElementById('aiResponseMeta').innerHTML =
+      `<strong>\u2733 Name Ideas</strong> &mdash; Company / Product Name`;
+    document.getElementById('aiResponseText').textContent = res.result;
+    document.getElementById('aiResponseContent').style.display = 'block';
+    aiHistory.unshift({ action: 'ideate_name', target: 'Company Name', cellKey: null, result: res.result, time: new Date().toLocaleTimeString() });
+    renderHistory();
+  } catch (err) {
+    document.getElementById('aiLoading').classList.remove('active');
+    toast('AI request failed');
+    document.getElementById('aiEmptyState').style.display = 'block';
+  }
+}
+
+function renderHistory() {
+  const list = document.getElementById('aiHistoryList');
+  const empty = document.getElementById('aiHistoryEmpty');
+  list.innerHTML = '';
+  empty.style.display = aiHistory.length ? 'none' : 'block';
+  aiHistory.forEach((h, i) => {
+    const el = document.createElement('div');
+    el.className = 'ai-history-item';
+    el.innerHTML = `
+      <div class="ai-history-action ${h.action}">${ACTION_ICONS[h.action] || ''} ${ACTION_LABELS[h.action] || h.action} &middot; ${h.time}</div>
+      <div class="ai-history-target">${escHtml(h.target)}</div>
+      <div class="ai-history-preview">${escHtml(h.result.substring(0, 120))}</div>
+    `;
+    el.onclick = () => {
+      showAITab('response');
+      document.getElementById('aiResponseMeta').innerHTML =
+        `<strong>${ACTION_ICONS[h.action]} ${ACTION_LABELS[h.action]}</strong> &mdash; ${escHtml(h.target)}`;
+      document.getElementById('aiResponseText').textContent = h.result;
+      document.getElementById('aiEmptyState').style.display = 'none';
+      document.getElementById('aiResponseContent').style.display = 'block';
+    };
+    list.appendChild(el);
+  });
+}
+
+// Auto-enable AI if key exists
+if (aiApiKey) {
+  aiEnabled = true;
+  document.body.classList.add('ai-enabled');
+  document.body.classList.add('show-help');
+  document.getElementById('aiToggleBtn').classList.add('ai-active');
+}
+
+// ── Keyboard shortcuts ──
+document.addEventListener('keydown', e => {
+  const mod = e.metaKey || e.ctrlKey;
+  if (mod && e.key === 'n') { e.preventDefault(); newCanvas(); }
+  if (mod && e.key === 'o') { e.preventDefault(); openFile(); }
+  if (mod && e.key === 'z' && e.shiftKey) { e.preventDefault(); redo(); }
+  else if (mod && e.key === 'z') { e.preventDefault(); undo(); }
+  if (mod && e.key === 's' && e.shiftKey) { e.preventDefault(); saveFileAs(); }
+  else if (mod && e.key === 's') { e.preventDefault(); saveFile(); }
+});
+
+// Enter in API key modal
+document.getElementById('apiKeyInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') saveApiKey();
+  if (e.key === 'Escape') closeApiKeyModal();
+});
+
+// ── Warn on close ──
+window.addEventListener('beforeunload', e => {
+  if (dirty) { e.preventDefault(); e.returnValue = ''; }
+});
+
+// ── Init ──
+renderGrid();
+updateFilePath();
+pushUndo();
+</script>
+</body>
+</html>

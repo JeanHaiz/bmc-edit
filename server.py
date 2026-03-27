@@ -241,11 +241,38 @@ def _build_context(data: dict, cell_key: str | None) -> str:
     return "\n".join(lines)
 
 
+ACTION_INSTRUCTIONS = {
+    "challenge": (
+        "Your task is to CHALLENGE the founder's assumptions. Ask tough questions, "
+        "point out risks, identify weak spots, and highlight contradictions. "
+        "Do NOT suggest new ideas or alternatives — only question what is there. "
+        "Be concise (max 6 points). If a section is empty, challenge why."
+    ),
+    "ideate": (
+        "Your task is to IDEATE — suggest concrete, actionable ideas. Be specific, "
+        "not generic. Tailor suggestions to what's already in the canvas. "
+        "Use bullet points with short explanations. Suggest 4–6 ideas. "
+        "If the section is empty, suggest starter ideas based on the rest of the canvas."
+    ),
+    "educate": (
+        "Your task is to EDUCATE — explain this section of the Business Model Canvas "
+        "to someone who may not be familiar with it. Use plain language with real-world "
+        "examples. Avoid jargon. Be encouraging. Keep explanations concise but insightful."
+    ),
+}
+
+DEFAULT_SYSTEM = (
+    "You are an experienced business strategist acting as a Business Model Canvas coach "
+    "for early-stage founders."
+)
+
+
 def handle_ai(body: dict) -> dict:
     api_key = load_api_key()
     action = body.get("action", "")
     cell_key = body.get("cell_key")
     canvas_data = body.get("data", {})
+    persona_prompt = body.get("persona_prompt", "")
 
     if not api_key:
         return {"error": "API key not configured"}
@@ -255,49 +282,25 @@ def handle_ai(body: dict) -> dict:
     context = _build_context(canvas_data, cell_key)
     target = BLOCK_LABELS.get(cell_key, "the entire canvas") if cell_key else "the entire canvas"
 
-    if action == "challenge":
-        system = (
-            "You are a sharp, experienced business strategist reviewing a Business Model Canvas. "
-            "Your role is to CHALLENGE assumptions — ask tough questions, point out risks, "
-            "identify weak spots, and highlight contradictions. "
-            "Do NOT suggest new ideas or alternatives. Only question what is there. "
-            "Be direct but constructive. Use bullet points. Keep it concise (max 6 points). "
-            "If a section is empty, challenge why it hasn't been filled in yet."
-        )
-        user = f"Challenge {target}:\n\n{context}"
-
-    elif action == "ideate":
-        system = (
-            "You are a creative business strategist helping brainstorm for a Business Model Canvas. "
-            "Suggest concrete, actionable ideas. Be specific — not generic advice. "
-            "Tailor suggestions to what's already in the canvas. "
-            "Use bullet points with short explanations. Suggest 4–6 ideas. "
-            "If the section is empty, suggest starter ideas based on the rest of the canvas."
-        )
-        user = f"Generate ideas for {target}:\n\n{context}"
-
-    elif action == "educate":
-        system = (
-            "You are a friendly business coach explaining the Business Model Canvas to someone "
-            "who may not be familiar with it. Explain concepts in plain language with real-world "
-            "examples. Avoid jargon. Be encouraging. Keep explanations concise but insightful. "
-            "If reviewing a specific section, explain what goes there and why it matters. "
-            "If reviewing the whole canvas, give an overview of how the sections connect."
-        )
-        user = f"Explain {target} to help someone understand what to fill in:\n\n{context}"
-
-    elif action == "ideate_name":
+    if action == "ideate_name":
         company = canvas_data.get("company_name", "")
+        base = persona_prompt or DEFAULT_SYSTEM
         system = (
-            "You are a creative branding expert. Suggest 5–8 company/product name ideas. "
-            "For each, give: the name, a one-line rationale. "
-            "Be creative and varied — mix styles (descriptive, abstract, compound words, etc). "
-            "Use bullet points."
+            f"{base}\n\n"
+            "Your task is to suggest 5–8 company/product name ideas. "
+            "For each, give the name and a one-line rationale. "
+            "Be creative and varied. Use bullet points."
         )
         if company:
             user = f"The current working name is \"{company}\". Suggest alternatives or variations based on this canvas:\n\n{context}"
         else:
             user = f"Suggest company/product name ideas based on this canvas:\n\n{context}"
+    else:
+        base = persona_prompt or DEFAULT_SYSTEM
+        instruction = ACTION_INSTRUCTIONS[action]
+        system = f"{base}\n\n{instruction}"
+        action_verbs = {"challenge": "Challenge", "ideate": "Generate ideas for", "educate": "Explain"}
+        user = f"{action_verbs[action]} {target}:\n\n{context}"
 
     try:
         result = _call_claude(api_key, system, user)
@@ -312,6 +315,94 @@ def handle_ai(body: dict) -> dict:
         return {"error": msg}
     except Exception:
         return {"error": "AI request failed"}
+
+
+_PERSONA_GENERATION_PROMPT = r"""You are a product design assistant specializing in AI coach personas.
+
+Your task is to generate a complete BMC Coach Persona for {name}, designed for early-stage founders.
+
+You MUST output ONLY a valid JSON object (no markdown fences, no commentary) with these exact fields:
+
+{{
+  "id": "lowercase_surname",
+  "name": "Full Name",
+  "title": "The [Archetype]",
+  "tone": "2-4 word tone description",
+  "emoji": "single emoji capturing their energy",
+  "tagline": "One punchy sentence — their essence without being reverent",
+  "thinkingVerbs": ["6 loading-state verbs ending in '...', reflecting HOW this person thinks"],
+  "achievements": ["5 bullet points — real, readable, slightly irreverent, not a dry LinkedIn bio"],
+  "vibe": "2-3 sentences in second person telling the user what it feels like to be coached by this person. Be honest about their edges.",
+  "systemPrompt": "The full system prompt (see structure below)"
+}}
+
+## SYSTEM PROMPT STRUCTURE
+
+The systemPrompt field must contain all of these sections as a single string with \n separators:
+
+**Character & Voice** — Who this person is, what shaped them, how they speak. 3-5 sentences. Include one distinctive speech pattern or verbal habit.
+
+**Coaching Philosophy** — Their core belief about what makes a Business Model Canvas succeed or fail. What they optimize for. What they're allergic to.
+
+**How You Coach Each Block** — For each of these 9 BMC blocks, write one specific coaching prompt in their voice:
+- Key Partners, Key Activities, Key Resources, Value Propositions, Customer Relationships, Channels, Customer Segments, Cost Structure, Revenue Streams
+
+**Tone Rules** — 8-10 specific behavioral rules. Include what they say vs never say, how they handle vagueness, how they respond to struggle, one unusual quirk.
+
+**What You Never Do** — 4 hard constraints this persona explicitly avoids.
+
+**Signature Phrases** — 4 phrases grounded in their real documented speech patterns, adapted for coaching.
+
+The systemPrompt must start with "You are [Name]..." and be usable as-is in a production app.
+
+## QUALITY CONSTRAINTS
+
+- The thinking verbs must be completely distinct from these already-used sets:
+  Chouinard: Questioning, Reflecting, Sitting with this, Tracing back, Unearthing, Weighing
+  Burns: Listening, Seeing you, Getting real, Checking in, Pushing through, Connecting
+  Hastings: Stress-testing, Falsifying, Modelling, Isolating, Pressure-checking, Deriving
+  Nooyi: Mapping dependencies, Probing, Interrogating, Tracing logic, Constructing, Stress-testing
+- Every coaching prompt must sound unmistakably like {name} — not generic.
+- The profile (tagline, achievements, vibe) should be punchy and human, not an executive bio.
+- Do not use: synergy, pivot, disrupt, leverage, empower, unlock (unless in their actual documented speech).
+
+Output ONLY the JSON object. No markdown fences. No explanation."""
+
+
+def handle_generate_persona(body: dict) -> dict:
+    api_key = load_api_key()
+    name = body.get("name", "").strip()
+
+    if not api_key:
+        return {"error": "API key not configured"}
+    if not name:
+        return {"error": "Name is required"}
+
+    system = _PERSONA_GENERATION_PROMPT.format(name=name)
+    user = f"Create a Business Model Canvas coaching persona for: {name}"
+
+    try:
+        result = _call_claude(api_key, system, user)
+        # Parse the JSON from the response
+        text = result.strip()
+        # Handle possible markdown code fences
+        if text.startswith("```"):
+            text = re.sub(r"^```(?:json)?\s*", "", text)
+            text = re.sub(r"\s*```\s*$", "", text)
+        persona = json.loads(text)
+        return {"persona": persona}
+    except json.JSONDecodeError:
+        return {"error": "Failed to parse persona — try again"}
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode() if e.fp else ""
+        try:
+            err_data = json.loads(err_body)
+            msg = err_data.get("error", {}).get("message", "API request failed")
+        except Exception:
+            msg = "API request failed"
+        return {"error": msg}
+    except Exception:
+        return {"error": "Persona generation failed"}
 
 
 # ── HTTP Handler ──
@@ -484,6 +575,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if body is None:
                 return
             result = handle_ai(body)
+            status = 400 if "error" in result else 200
+            self._json_response(result, status)
+
+        elif parsed.path == "/api/generate-persona":
+            body = self._read_body()
+            if body is None:
+                return
+            result = handle_generate_persona(body)
             status = 400 if "error" in result else 200
             self._json_response(result, status)
 

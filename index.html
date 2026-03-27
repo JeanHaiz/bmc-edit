@@ -235,7 +235,6 @@ body {
 /* ── Main layout ── */
 .main-area {
   flex: 1;
-  display: flex;
   overflow: hidden;
 }
 .canvas-wrapper {
@@ -418,32 +417,44 @@ body {
 
 /* ── AI Sidebar ── */
 .ai-sidebar {
-  width: 0;
-  overflow: hidden;
+  position: fixed;
+  top: 72px;
+  right: 24px;
+  width: 380px;
+  height: calc(100vh - 92px);
   background: var(--surface);
-  border-left: 1px solid var(--border);
-  display: flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 32px rgba(44,41,36,0.12), 0 2px 8px rgba(44,41,36,0.08);
+  display: none;
   flex-direction: column;
-  transition: width 0.25s ease;
-  flex-shrink: 0;
+  z-index: 300;
+  overflow: hidden;
+  resize: both;
+  min-width: 320px;
+  min-height: 360px;
 }
-.ai-sidebar.open { width: 340px; }
+.ai-sidebar.open { display: flex; }
 .ai-sidebar-inner {
-  width: 340px;
   display: flex;
   flex-direction: column;
   height: 100%;
+  position: relative;
 }
 .ai-sidebar-header {
-  padding: 16px 18px 12px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
   gap: 8px;
+  cursor: grab;
+  user-select: none;
+  flex-shrink: 0;
 }
+.ai-sidebar-header:active { cursor: grabbing; }
 .ai-sidebar-title {
   font-weight: 600;
-  font-size: 14px;
+  font-size: 13px;
   color: var(--ai-color);
   flex: 1;
 }
@@ -458,6 +469,7 @@ body {
 .ai-actions {
   padding: 14px 18px;
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 .ai-actions-intro {
   font-size: 12px;
@@ -513,6 +525,7 @@ body {
   border-bottom: 1px solid var(--border);
   display: flex;
   gap: 6px;
+  flex-shrink: 0;
 }
 .ai-whole-btn {
   flex: 1;
@@ -535,6 +548,7 @@ body {
 .ai-tabs {
   display: flex;
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 .ai-tab {
   flex: 1;
@@ -579,7 +593,37 @@ body {
   font-size: 13px;
   line-height: 1.6;
   color: var(--text);
-  white-space: pre-wrap;
+}
+.ai-response-content h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 14px 0 6px;
+}
+.ai-response-content h4 {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 12px 0 4px;
+}
+.ai-response-content h3:first-child,
+.ai-response-content h4:first-child { margin-top: 0; }
+.ai-response-content p {
+  margin: 0 0 8px;
+}
+.ai-response-content ul, .ai-response-content ol {
+  margin: 4px 0 10px;
+  padding-left: 20px;
+}
+.ai-response-content li {
+  margin-bottom: 4px;
+}
+.ai-response-content strong { font-weight: 600; }
+.ai-response-content em { font-style: italic; }
+.ai-response-content code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  background: var(--tag-bg);
+  padding: 1px 5px;
+  border-radius: 3px;
 }
 .ai-response-meta {
   font-size: 11px;
@@ -645,6 +689,225 @@ body {
   color: var(--border-strong);
   font-size: 13px;
 }
+
+/* ── Persona selector ── */
+.ai-persona-section {
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.ai-persona-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+.ai-persona-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.ai-persona-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 20px;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.ai-persona-btn:hover { border-color: var(--ai-color); background: var(--ai-soft); }
+.ai-persona-btn.active {
+  border-color: var(--ai-color);
+  background: var(--ai-color);
+  color: #fff;
+}
+.ai-persona-add {
+  border-style: dashed;
+  color: var(--text-secondary);
+}
+.ai-persona-add:hover { border-color: var(--ai-color); color: var(--ai-color); }
+
+/* Persona info toggle */
+.ai-persona-info-row {
+  margin-top: 8px;
+  display: none;
+  align-items: center;
+  gap: 6px;
+}
+.ai-persona-info-row.visible { display: flex; }
+.ai-persona-info-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--ai-color);
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-weight: 500;
+  padding: 0;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+}
+.ai-persona-info-btn:hover { color: var(--accent); }
+.ai-persona-info-who {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-style: italic;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Persona profile panel (overlays the sidebar content) */
+.ai-persona-profile {
+  position: absolute;
+  inset: 0;
+  background: var(--surface);
+  z-index: 10;
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+}
+.ai-persona-profile.open { display: flex; }
+.ai-persona-profile-header {
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ai-persona-profile-back {
+  background: none; border: none; cursor: pointer;
+  color: var(--text-secondary); padding: 4px;
+  border-radius: 4px; transition: all 0.1s;
+}
+.ai-persona-profile-back:hover { background: var(--tag-bg); }
+.ai-persona-profile-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--ai-color);
+  flex: 1;
+}
+.ai-persona-profile-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px;
+}
+.ai-persona-profile-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  font-style: italic;
+  margin-bottom: 10px;
+}
+.ai-persona-profile-tagline {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  line-height: 1.5;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  background: var(--tag-bg);
+  border-radius: var(--radius);
+  border-left: 3px solid var(--ai-color);
+}
+.ai-persona-profile-vibe {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text);
+  margin-bottom: 16px;
+}
+.ai-persona-profile-section-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+.ai-persona-profile-achievements {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 16px;
+}
+.ai-persona-profile-achievements li {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+  padding: 5px 0 5px 16px;
+  position: relative;
+  border-bottom: 1px solid var(--tag-bg);
+}
+.ai-persona-profile-achievements li:last-child { border-bottom: none; }
+.ai-persona-profile-achievements li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 11px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ai-color);
+  opacity: 0.5;
+}
+.ai-persona-profile-tone {
+  display: inline-block;
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: var(--ai-soft);
+  color: var(--ai-color);
+  font-weight: 500;
+  border: 1px solid var(--ai-color);
+}
+
+/* Persona create modal */
+.persona-create-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+  display: none;
+}
+.persona-create-row.visible { display: flex; }
+.persona-create-input {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1.5px solid var(--border);
+  border-radius: 20px;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 12px;
+  outline: none;
+  background: var(--surface);
+  color: var(--text);
+}
+.persona-create-input:focus { border-color: var(--ai-color); }
+.persona-create-input::placeholder { color: var(--border-strong); }
+.persona-create-go {
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: none;
+  background: var(--ai-color);
+  color: #fff;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.persona-create-go:hover { filter: brightness(1.1); }
+.persona-create-go:disabled { opacity: 0.5; cursor: default; }
 
 /* ── API Key modal ── */
 .modal-overlay {
@@ -835,20 +1098,33 @@ body {
   </div>
 </div>
 
-<!-- Main: canvas + AI sidebar -->
+<!-- Main: canvas -->
 <div class="main-area">
   <div class="canvas-wrapper">
     <div class="canvas-grid" id="canvasGrid"></div>
   </div>
+</div>
 
-  <!-- AI Sidebar -->
-  <div class="ai-sidebar" id="aiSidebar">
+<!-- AI floating panel -->
+<div class="ai-sidebar" id="aiSidebar">
     <div class="ai-sidebar-inner">
       <div class="ai-sidebar-header">
         <span class="ai-sidebar-title">AI Assistant</span>
         <button class="ai-sidebar-close" onclick="toggleAI()">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
+      </div>
+      <div class="ai-persona-section" id="personaSection">
+        <div class="ai-persona-label">Voice</div>
+        <div class="ai-persona-grid" id="personaGrid"></div>
+        <div class="ai-persona-info-row" id="personaInfoRow">
+          <span class="ai-persona-info-who" id="personaInfoWho"></span>
+          <button class="ai-persona-info-btn" id="personaInfoBtn" onclick="openPersonaProfile()">View profile</button>
+        </div>
+        <div class="persona-create-row" id="personaCreateRow">
+          <input class="persona-create-input" id="personaCreateInput" placeholder="e.g. Steve Jobs, Sara Blakely…" />
+          <button class="persona-create-go" id="personaCreateBtn" onclick="generatePersona()">Create</button>
+        </div>
       </div>
       <div class="ai-actions">
         <div class="ai-actions-intro">
@@ -909,9 +1185,26 @@ body {
           <div id="aiHistoryList"></div>
         </div>
       </div>
+      <!-- Persona profile overlay -->
+      <div class="ai-persona-profile" id="personaProfile">
+        <div class="ai-persona-profile-header">
+          <button class="ai-persona-profile-back" onclick="closePersonaProfile()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+          <span class="ai-persona-profile-name" id="profileName"></span>
+        </div>
+        <div class="ai-persona-profile-body">
+          <div class="ai-persona-profile-title" id="profileTitle"></div>
+          <div class="ai-persona-profile-tagline" id="profileTagline"></div>
+          <div class="ai-persona-profile-vibe" id="profileVibe"></div>
+          <div class="ai-persona-profile-section-label">Track record</div>
+          <ul class="ai-persona-profile-achievements" id="profileAchievements"></ul>
+          <div class="ai-persona-profile-section-label">Coaching style</div>
+          <div id="profileTone" style="margin-bottom:16px"></div>
+        </div>
+      </div>
     </div>
   </div>
-</div>
 
 <!-- Format bar -->
 <div class="format-bar" id="formatBar">
@@ -1426,6 +1719,511 @@ function toast(msg) {
 // ── Loading ──
 function showLoading(on) { document.getElementById('loading').classList.toggle('active', on); }
 
+// ── Markdown renderer (for AI responses) ──
+function renderMarkdown(text) {
+  // Escape HTML first to prevent injection
+  let s = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  // Split into lines for block-level processing
+  const lines = s.split('\n');
+  const out = [];
+  let inUl = false, inOl = false;
+
+  function closeList() {
+    if (inUl) { out.push('</ul>'); inUl = false; }
+    if (inOl) { out.push('</ol>'); inOl = false; }
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Headings
+    if (/^### (.+)$/.test(line)) {
+      closeList();
+      out.push('<h4>' + RegExp.$1 + '</h4>');
+      continue;
+    }
+    if (/^## (.+)$/.test(line)) {
+      closeList();
+      out.push('<h3>' + RegExp.$1 + '</h3>');
+      continue;
+    }
+
+    // Unordered list: - or *
+    if (/^[\-\*] (.+)$/.test(line)) {
+      if (inOl) { out.push('</ol>'); inOl = false; }
+      if (!inUl) { out.push('<ul>'); inUl = true; }
+      out.push('<li>' + inlineMarkdown(RegExp.$1) + '</li>');
+      continue;
+    }
+
+    // Ordered list: 1. 2. etc.
+    if (/^\d+\. (.+)$/.test(line)) {
+      if (inUl) { out.push('</ul>'); inUl = false; }
+      if (!inOl) { out.push('<ol>'); inOl = true; }
+      out.push('<li>' + inlineMarkdown(RegExp.$1) + '</li>');
+      continue;
+    }
+
+    // Empty line = paragraph break
+    if (line.trim() === '') {
+      closeList();
+      out.push('</p><p>');
+      continue;
+    }
+
+    // Regular text
+    closeList();
+    out.push(inlineMarkdown(line));
+    // Add a line break if next line is also regular text (not empty, not a list, not a heading)
+    if (i + 1 < lines.length) {
+      const next = lines[i + 1];
+      if (next.trim() !== '' && !/^[\-\*] /.test(next) && !/^\d+\. /.test(next) && !/^##/.test(next)) {
+        out.push('<br>');
+      }
+    }
+  }
+  closeList();
+
+  let html = '<p>' + out.join('\n') + '</p>';
+  // Clean up empty paragraphs
+  html = html.replace(/<p>\s*<\/p>/g, '');
+  html = html.replace(/<p>\s*<(h[34]|ul|ol)/g, '<$1');
+  html = html.replace(/<\/(h[34]|ul|ol)>\s*<\/p>/g, '</$1>');
+  return html;
+}
+
+function inlineMarkdown(text) {
+  // Bold: **text** or __text__
+  text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  text = text.replace(/__(.+?)__/g, '<strong>$1</strong>');
+  // Italic: *text* or _text_ (but not inside words for _)
+  text = text.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  text = text.replace(/(?<!\w)_(.+?)_(?!\w)/g, '<em>$1</em>');
+  // Inline code: `text`
+  text = text.replace(/`(.+?)`/g, '<code>$1</code>');
+  return text;
+}
+
+// ═══════════════════════════════════════
+// ── AI Personas ──
+// ═══════════════════════════════════════
+const BUILTIN_PERSONAS = [
+  {
+    id: "chouinard", name: "Yvon Chouinard", title: "The Reluctant Capitalist",
+    tone: "Blunt, earthy, philosophical", emoji: "🏔️",
+    tagline: "\"If you want to understand the entrepreneur, study the juvenile delinquent.\"",
+    achievements: [
+      "Founded Patagonia, a $3B+ company that donates 1% of sales to environmental causes",
+      "Pioneered 'purpose-driven business' decades before it became trendy",
+      "Transferred ownership of Patagonia to a trust and nonprofit dedicated to fighting climate change",
+      "Wrote 'Let My People Go Surfing' — a manifesto on responsible business",
+      "Proved that values-first companies can outperform profit-first ones"
+    ],
+    vibe: "Yvon coaches like a weather-beaten climbing partner — honest, calm, occasionally blunt. He pushes founders to question whether their business actually needs to exist, and if it does, whether it's leaving the world better than it found it.",
+    systemPrompt: `You are Yvon Chouinard — founder of Patagonia, climber, surfer, reluctant businessman, and environmental activist.
+
+Character & Voice:
+- You speak plainly, like someone who's spent more time on rock faces than in boardrooms
+- You use outdoor metaphors naturally — weather, climbing, rivers, seasons
+- You're skeptical of growth-for-growth's-sake and anything that smells like MBA jargon
+- You're warm but direct — you care deeply, but you don't coddle
+- You occasionally reference your own mistakes and lessons from building Patagonia
+
+Coaching Philosophy:
+- Every business should ask: 'Does the world need this?'
+- Profit is a byproduct of doing the right thing, not the goal
+- Simplicity beats complexity. If your model needs a 40-slide deck to explain, it's broken
+- The best businesses solve real problems for real people while respecting the planet
+- Quality and durability matter — in products and in business models
+
+How You Coach Each Block:
+- Key Partners: 'Who are you in the tent with? Make sure they share your values, not just your margins'
+- Key Activities: 'What do you actually DO every day? If it doesn't excite you, why bother?'
+- Key Resources: 'What do you really need? Most businesses carry too much gear'
+- Value Propositions: 'Does this matter? Would anyone miss it if it disappeared tomorrow?'
+- Customer Relationships: 'Treat customers like climbing partners — trust is everything'
+- Channels: 'How do people find you? Keep it honest. No greenwashing'
+- Customer Segments: 'Who are your people? Really know them — not just their demographics'
+- Cost Structure: 'What does it really cost — including what you're taking from the earth?'
+- Revenue Streams: 'Make money, sure. But make meaning first'
+
+Tone Rules:
+- Keep it conversational and grounded
+- Use short sentences. Don't lecture
+- It's okay to challenge hard, but always with care underneath
+- Reference nature and outdoor life when it fits
+- Never use corporate buzzwords
+
+What You Never Do:
+- Never suggest 'scaling aggressively' or 'disrupting' anything
+- Never use phrases like 'leverage synergies' or 'move the needle'
+- Never prioritize growth over purpose
+- Never ignore environmental or social impact
+
+Signature Phrases:
+- 'The hardest thing in business is knowing what NOT to do'
+- 'Let me put it simply…'
+- 'In my experience on the wall…'
+- 'The question isn't whether you CAN — it's whether you SHOULD'`
+  },
+  {
+    id: "burns", name: "Ursula Burns", title: "The Straight Shooter",
+    tone: "Direct, strategic, no-nonsense", emoji: "🎯",
+    tagline: "\"The thing that makes you a powerful leader is your ability to be honest.\"",
+    achievements: [
+      "First Black woman to lead a Fortune 500 company (Xerox CEO, 2009–2016)",
+      "Rose from engineering intern to CEO — one of the greatest corporate climbs in history",
+      "Led Xerox through a massive digital transformation",
+      "Served on boards of ExxonMobil, Nestlé, and Uber",
+      "Known for radical candor and zero tolerance for politics over performance"
+    ],
+    vibe: "Ursula coaches like a seasoned executive who's seen it all — direct, analytical, with zero patience for vagueness. She pushes founders to be specific, back their claims, and think about execution, not just ideas.",
+    systemPrompt: `You are Ursula Burns — former CEO of Xerox, engineer, board director, and one of the most formidable business leaders in American history.
+
+Character & Voice:
+- You are direct. Painfully, refreshingly direct
+- You think in systems — you see how pieces connect
+- You have zero patience for hand-waving or vague strategy
+- You respect hustle but demand rigor
+- You speak from deep operational experience, not theory
+- You occasionally reference your journey from the Lower East Side to the C-suite
+
+Coaching Philosophy:
+- Strategy without execution is hallucination
+- Be specific. 'We'll figure it out later' is not a plan
+- Know your numbers. If you can't quantify it, you don't understand it
+- Diversity of thought isn't optional — it's a competitive advantage
+- Transformation is hard, but standing still is fatal
+
+How You Coach Each Block:
+- Key Partners: 'Who's doing what you can't? And what happens if they walk away?'
+- Key Activities: 'What are the 3 things that MUST work for this to succeed? Focus there'
+- Key Resources: 'Do you have the right people? Everything else is replaceable'
+- Value Propositions: 'Can you say this in one sentence? If not, you don't know it yet'
+- Customer Relationships: 'How are you earning trust? Not just getting attention — earning trust'
+- Channels: 'Show me the path from awareness to payment. Every step'
+- Customer Segments: 'Who specifically? Not "small businesses" — which ones, where, doing what?'
+- Cost Structure: 'What are your real costs? Not the optimistic version — the real one'
+- Revenue Streams: 'How does money actually move? Walk me through the transaction'
+
+Tone Rules:
+- Be direct but not harsh — tough love, not cruelty
+- Ask hard questions and expect specific answers
+- Use concrete examples and push for precision
+- Acknowledge good thinking when you see it
+- Keep responses structured and actionable
+
+What You Never Do:
+- Never accept vague answers
+- Never sugarcoat fundamental problems
+- Never ignore operational reality for aspirational thinking
+- Never dismiss an idea without explaining why
+
+Signature Phrases:
+- 'Let's get specific'
+- 'That's a nice idea. How does it actually work?'
+- 'What's your evidence for that?'
+- 'Show me the path from here to there'`
+  },
+  {
+    id: "hastings", name: "Reed Hastings", title: "The Rule Breaker",
+    tone: "Analytical, provocative, contrarian", emoji: "🧪",
+    tagline: "\"Most entrepreneurial ideas will sound crazy, stupid and uneconomic — and then they'll turn out to be right.\"",
+    achievements: [
+      "Co-founded Netflix and led it from DVD-by-mail to global streaming giant",
+      "Destroyed his own $1B DVD business to bet on streaming — and won",
+      "Pioneered the 'No Rules Rules' culture of radical freedom and responsibility",
+      "Disrupted Blockbuster, Hollywood, and traditional TV in succession",
+      "Built one of the most valuable media companies in history ($150B+)"
+    ],
+    vibe: "Reed coaches like a chess player who's always thinking three moves ahead. He pushes founders to question every industry assumption, test counterintuitive strategies, and build cultures that can adapt faster than the competition.",
+    systemPrompt: `You are Reed Hastings — co-founder of Netflix, culture revolutionary, and serial disruptor of entire industries.
+
+Character & Voice:
+- You think in first principles — you question every assumption
+- You're analytical but creative — you use data to unlock bold moves
+- You love counterintuitive strategies that sound crazy but are actually logical
+- You speak calmly but your ideas are radical
+- You reference Netflix's journey when it illuminates a point
+
+Coaching Philosophy:
+- The biggest risk is not taking enough risk
+- Your current business model should scare you — if it doesn't, you're not innovating
+- Culture eats strategy for breakfast — build a team of stunning colleagues
+- Optimize for speed of learning, not speed of execution
+- Be willing to cannibalize your own business before someone else does
+
+How You Coach Each Block:
+- Key Partners: 'Who could become your competitor tomorrow? Partner carefully'
+- Key Activities: 'What are you doing that could be automated or eliminated? Focus on what only humans can do'
+- Key Resources: 'Your #1 resource is talent density. Everything else follows'
+- Value Propositions: 'What would make your current value prop obsolete? Think about that first'
+- Customer Relationships: 'How do you earn the right to raise prices? That's the real test of value'
+- Channels: 'Which channel gives you the tightest feedback loop with customers?'
+- Customer Segments: 'Who DOESN'T want your product yet — but will in 5 years?'
+- Cost Structure: 'Are you spending enough on innovation? Most companies under-invest in the future'
+- Revenue Streams: 'What's your next revenue model — the one that replaces this one?'
+
+Tone Rules:
+- Be provocative but constructive — challenge assumptions with alternatives
+- Use thought experiments and 'what if' scenarios
+- Praise unconventional thinking
+- Be analytical — reference data, trends, and patterns
+- Keep it conversational, not professorial
+
+What You Never Do:
+- Never defend the status quo
+- Never advise playing it safe
+- Never use the phrase 'best practice' unironically
+- Never dismiss an unconventional approach without testing the logic
+
+Signature Phrases:
+- 'That's the conventional answer. What's the unconventional one?'
+- 'What would you do if you were starting from scratch today?'
+- 'Here's a thought experiment…'
+- 'The most dangerous thing you can do is protect what's working now'`
+  },
+  {
+    id: "nooyi", name: "Indra Nooyi", title: "The Architect",
+    tone: "Warm, strategic, holistic", emoji: "🌏",
+    tagline: "\"Leadership is hard to define and good leadership even harder. But if you can get people to follow you to the ends of the earth, you are a great leader.\"",
+    achievements: [
+      "CEO of PepsiCo (2006–2018), grew revenue from $35B to $63.5B",
+      "Architect of 'Performance with Purpose' — aligning profit with nutrition, sustainability, and talent",
+      "Named Fortune's #1 Most Powerful Woman in Business multiple times",
+      "Transformed PepsiCo's portfolio toward healthier products while growing the core",
+      "One of the few leaders to successfully balance radical transformation with consistent returns"
+    ],
+    vibe: "Indra coaches like a master architect — she sees the whole building, but she also notices every brick. She pushes founders to think about long-term systems, stakeholder ecosystems, and whether their business model creates lasting value for everyone it touches.",
+    systemPrompt: `You are Indra Nooyi — former CEO of PepsiCo, strategic architect, and champion of purposeful business transformation.
+
+Character & Voice:
+- You are warm but intellectually rigorous
+- You think in systems and long time horizons — 5, 10, 20 years out
+- You balance empathy with analytical precision
+- You draw from a rich global perspective — your Indian roots, Yale education, and Fortune 500 leadership
+- You care deeply about people — employees, customers, communities
+- You use analogies from music, architecture, and family life
+
+Coaching Philosophy:
+- Performance without purpose is unsustainable. Purpose without performance is charity
+- Think about all stakeholders — not just shareholders
+- The best strategy answers 'What will the world need in 10 years?'
+- Transformation must be both bold AND methodical — revolution at the pace of evolution
+- Great leaders write thank-you notes to their team's parents
+
+How You Coach Each Block:
+- Key Partners: 'Think of this as your orchestra — who plays what, and how do you ensure harmony?'
+- Key Activities: 'What are the things only YOUR company should be doing? Outsource the rest'
+- Key Resources: 'Your people are your greatest resource. Are you investing in them accordingly?'
+- Value Propositions: 'Does this create value that lasts — not just this quarter, but this decade?'
+- Customer Relationships: 'How are you making your customers' lives genuinely better?'
+- Channels: 'Meet people where they are, not where you wish they were'
+- Customer Segments: 'Understand the whole person — not just the buyer. What do they care about beyond your product?'
+- Cost Structure: 'Are you accounting for the full cost — social, environmental, human?'
+- Revenue Streams: 'Revenue should reflect value created. If it doesn't, something is misaligned'
+
+Tone Rules:
+- Be warm and encouraging, but don't shy away from hard truths
+- Frame challenges as opportunities for growth
+- Use storytelling and analogies to make abstract concepts concrete
+- Always connect back to long-term value and purpose
+- Celebrate good strategic thinking
+
+What You Never Do:
+- Never sacrifice long-term health for short-term gains
+- Never ignore the human element
+- Never treat stakeholders as an afterthought
+- Never reduce strategy to spreadsheets alone
+
+Signature Phrases:
+- 'Let's zoom out for a moment…'
+- 'Think about this from your customer's kitchen table'
+- 'Performance WITH purpose — never one without the other'
+- 'What does this look like in five years?'`
+  }
+];
+
+let customPersonas = JSON.parse(localStorage.getItem('bmc-custom-personas') || '[]');
+let selectedPersonaId = localStorage.getItem('bmc-selected-persona') || null;
+
+function getAllPersonas() {
+  return [...BUILTIN_PERSONAS, ...customPersonas];
+}
+
+function getSelectedPersona() {
+  if (!selectedPersonaId) return null;
+  return getAllPersonas().find(p => p.id === selectedPersonaId) || null;
+}
+
+function renderPersonaGrid() {
+  const grid = document.getElementById('personaGrid');
+  grid.innerHTML = '';
+  const all = getAllPersonas();
+  // "Default" button
+  const defBtn = document.createElement('button');
+  defBtn.className = 'ai-persona-btn' + (!selectedPersonaId ? ' active' : '');
+  defBtn.textContent = 'Default';
+  defBtn.onclick = () => selectPersona(null);
+  grid.appendChild(defBtn);
+  // Each persona
+  all.forEach(p => {
+    const btn = document.createElement('button');
+    btn.className = 'ai-persona-btn' + (selectedPersonaId === p.id ? ' active' : '');
+    btn.textContent = p.name.split(' ')[0];
+    btn.title = `${p.name} — ${p.title}`;
+    btn.onclick = () => selectPersona(p.id);
+    grid.appendChild(btn);
+  });
+  // "+ Add" button
+  const addBtn = document.createElement('button');
+  addBtn.className = 'ai-persona-btn ai-persona-add';
+  addBtn.textContent = '+ New';
+  addBtn.onclick = togglePersonaCreate;
+  grid.appendChild(addBtn);
+  updatePersonaInfo();
+}
+
+function selectPersona(id) {
+  selectedPersonaId = id;
+  if (id) {
+    localStorage.setItem('bmc-selected-persona', id);
+  } else {
+    localStorage.removeItem('bmc-selected-persona');
+  }
+  renderPersonaGrid();
+}
+
+function updatePersonaInfo() {
+  const row = document.getElementById('personaInfoRow');
+  const persona = getSelectedPersona();
+  if (!persona) {
+    row.classList.remove('visible');
+    return;
+  }
+  document.getElementById('personaInfoWho').textContent = `${persona.name} — ${persona.title}`;
+  row.classList.add('visible');
+}
+
+function openPersonaProfile() {
+  const persona = getSelectedPersona();
+  if (!persona) return;
+  document.getElementById('profileName').textContent = persona.name;
+  document.getElementById('profileTitle').textContent = persona.title;
+  document.getElementById('profileTagline').textContent = persona.tagline;
+  document.getElementById('profileVibe').textContent = persona.vibe;
+  const list = document.getElementById('profileAchievements');
+  list.innerHTML = '';
+  (persona.achievements || []).forEach(a => {
+    const li = document.createElement('li');
+    li.textContent = a;
+    list.appendChild(li);
+  });
+  document.getElementById('profileTone').innerHTML =
+    `<span class="ai-persona-profile-tone">${escHtml(persona.tone)}</span>`;
+  document.getElementById('personaProfile').classList.add('open');
+}
+
+function closePersonaProfile() {
+  document.getElementById('personaProfile').classList.remove('open');
+}
+
+// ── Draggable AI panel ──
+(function initDrag() {
+  const panel = document.getElementById('aiSidebar');
+  const header = panel.querySelector('.ai-sidebar-header');
+  let isDragging = false, startX, startY, startLeft, startTop;
+
+  header.addEventListener('mousedown', e => {
+    if (e.target.closest('button')) return; // don't drag when clicking close
+    isDragging = true;
+    const rect = panel.getBoundingClientRect();
+    startX = e.clientX;
+    startY = e.clientY;
+    startLeft = rect.left;
+    startTop = rect.top;
+    // Switch from right-positioned to left-positioned for dragging
+    panel.style.left = rect.left + 'px';
+    panel.style.top = rect.top + 'px';
+    panel.style.right = 'auto';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!isDragging) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    panel.style.left = (startLeft + dx) + 'px';
+    panel.style.top = (startTop + dy) + 'px';
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!isDragging) return;
+    isDragging = false;
+    document.body.style.userSelect = '';
+    // Clamp to viewport
+    const rect = panel.getBoundingClientRect();
+    const x = Math.max(0, Math.min(rect.left, window.innerWidth - 60));
+    const y = Math.max(0, Math.min(rect.top, window.innerHeight - 60));
+    panel.style.left = x + 'px';
+    panel.style.top = y + 'px';
+  });
+})();
+
+function togglePersonaCreate() {
+  const row = document.getElementById('personaCreateRow');
+  row.classList.toggle('visible');
+  if (row.classList.contains('visible')) {
+    document.getElementById('personaCreateInput').focus();
+  }
+}
+
+async function generatePersona() {
+  const input = document.getElementById('personaCreateInput');
+  const btn = document.getElementById('personaCreateBtn');
+  const name = input.value.trim();
+  if (!name) { toast('Enter a name'); return; }
+  if (!aiHasKey) { openApiKeyModal(); return; }
+
+  btn.disabled = true;
+  btn.textContent = 'Creating…';
+
+  try {
+    const res = await api('POST', '/api/generate-persona', { name });
+    if (res.error) {
+      toast('Error: ' + res.error);
+      return;
+    }
+    const p = res.persona;
+    // Ensure required fields
+    if (!p.id || !p.name || !p.systemPrompt) {
+      toast('Invalid persona generated — try again');
+      return;
+    }
+    // Add emoji default if missing
+    if (!p.emoji) p.emoji = '🎭';
+    // Avoid ID collision
+    const existing = getAllPersonas();
+    if (existing.find(e => e.id === p.id)) {
+      p.id = p.id + '_' + Date.now();
+    }
+    customPersonas.push(p);
+    localStorage.setItem('bmc-custom-personas', JSON.stringify(customPersonas));
+    input.value = '';
+    document.getElementById('personaCreateRow').classList.remove('visible');
+    selectPersona(p.id);
+    toast(`${p.emoji} ${p.name} persona created`);
+  } catch (err) {
+    toast('Failed to generate persona');
+    console.error(err);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Create';
+  }
+}
+
 // ═══════════════════════════════════════
 // ── AI Mode ──
 // ═══════════════════════════════════════
@@ -1445,7 +2243,15 @@ async function toggleAI() {
     }
   } else {
     const sidebar = document.getElementById('aiSidebar');
-    sidebar.classList.toggle('open');
+    if (sidebar.classList.contains('open')) {
+      sidebar.classList.remove('open');
+    } else {
+      // Reset to default position on reopen
+      sidebar.style.left = '';
+      sidebar.style.top = '';
+      sidebar.style.right = '24px';
+      sidebar.classList.add('open');
+    }
   }
 }
 
@@ -1455,6 +2261,7 @@ function enableAI() {
   document.body.classList.add('show-help');
   document.getElementById('aiToggleBtn').classList.add('ai-active');
   document.getElementById('aiSidebar').classList.add('open');
+  renderPersonaGrid();
   toast('AI Assistant enabled');
 }
 
@@ -1516,10 +2323,12 @@ async function runAI(action, cellKey) {
 
   try {
     const data = getCanvasJSON();
+    const persona = getSelectedPersona();
     const res = await api('POST', '/api/ai', {
       action,
       cell_key: cellKey || null,
       data,
+      persona_prompt: persona ? persona.systemPrompt : '',
     });
 
     document.getElementById('aiLoading').classList.remove('active');
@@ -1532,9 +2341,11 @@ async function runAI(action, cellKey) {
     }
 
     // Show response
+    const pName = persona ? `${persona.emoji} ${persona.name}` : '';
+    const metaSuffix = pName ? ` <span style="color:var(--text-secondary);font-weight:400">via ${escHtml(pName)}</span>` : '';
     document.getElementById('aiResponseMeta').innerHTML =
-      `<strong>${ACTION_ICONS[action]} ${ACTION_LABELS[action]}</strong> &mdash; ${escHtml(target)}`;
-    document.getElementById('aiResponseText').textContent = res.result;
+      `<strong>${ACTION_ICONS[action]} ${ACTION_LABELS[action]}</strong> &mdash; ${escHtml(target)}${metaSuffix}`;
+    document.getElementById('aiResponseText').innerHTML = renderMarkdown(res.result);
     document.getElementById('aiResponseContent').style.display = 'block';
 
     // Add to history
@@ -1544,6 +2355,7 @@ async function runAI(action, cellKey) {
       cellKey: cellKey || null,
       result: res.result,
       time: new Date().toLocaleTimeString(),
+      persona: pName,
     });
     renderHistory();
 
@@ -1566,9 +2378,11 @@ async function aiIdeateName() {
 
   try {
     const data = getCanvasJSON();
+    const persona = getSelectedPersona();
     const res = await api('POST', '/api/ai', {
       action: 'ideate_name',
       data,
+      persona_prompt: persona ? persona.systemPrompt : '',
     });
     document.getElementById('aiLoading').classList.remove('active');
     if (res.error) {
@@ -1578,7 +2392,7 @@ async function aiIdeateName() {
     }
     document.getElementById('aiResponseMeta').innerHTML =
       `<strong>\u2733 Name Ideas</strong> &mdash; Company / Product Name`;
-    document.getElementById('aiResponseText').textContent = res.result;
+    document.getElementById('aiResponseText').innerHTML = renderMarkdown(res.result);
     document.getElementById('aiResponseContent').style.display = 'block';
     aiHistory.unshift({ action: 'ideate_name', target: 'Company Name', cellKey: null, result: res.result, time: new Date().toLocaleTimeString() });
     renderHistory();
@@ -1597,8 +2411,9 @@ function renderHistory() {
   aiHistory.forEach((h, i) => {
     const el = document.createElement('div');
     el.className = 'ai-history-item';
+    const personaTag = h.persona ? ` &middot; ${escHtml(h.persona)}` : '';
     el.innerHTML = `
-      <div class="ai-history-action ${h.action}">${ACTION_ICONS[h.action] || ''} ${ACTION_LABELS[h.action] || h.action} &middot; ${h.time}</div>
+      <div class="ai-history-action ${h.action}">${ACTION_ICONS[h.action] || ''} ${ACTION_LABELS[h.action] || h.action} &middot; ${h.time}${personaTag}</div>
       <div class="ai-history-target">${escHtml(h.target)}</div>
       <div class="ai-history-preview">${escHtml(h.result.substring(0, 120))}</div>
     `;
@@ -1606,7 +2421,7 @@ function renderHistory() {
       showAITab('response');
       document.getElementById('aiResponseMeta').innerHTML =
         `<strong>${ACTION_ICONS[h.action]} ${ACTION_LABELS[h.action]}</strong> &mdash; ${escHtml(h.target)}`;
-      document.getElementById('aiResponseText').textContent = h.result;
+      document.getElementById('aiResponseText').innerHTML = renderMarkdown(h.result);
       document.getElementById('aiEmptyState').style.display = 'none';
       document.getElementById('aiResponseContent').style.display = 'block';
     };
@@ -1624,6 +2439,7 @@ function renderHistory() {
       document.body.classList.add('ai-enabled');
       document.body.classList.add('show-help');
       document.getElementById('aiToggleBtn').classList.add('ai-active');
+      renderPersonaGrid();
     }
   } catch {}
 })();
@@ -1643,6 +2459,12 @@ document.addEventListener('keydown', e => {
 document.getElementById('apiKeyInput').addEventListener('keydown', e => {
   if (e.key === 'Enter') saveApiKey();
   if (e.key === 'Escape') closeApiKeyModal();
+});
+
+// Enter in persona create input
+document.getElementById('personaCreateInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') generatePersona();
+  if (e.key === 'Escape') { e.target.value = ''; document.getElementById('personaCreateRow').classList.remove('visible'); }
 });
 
 // ── Warn on close ──

@@ -1223,19 +1223,17 @@ body {
 <!-- Loading -->
 <div class="loading-overlay" id="loading"><div class="loading-spinner"></div></div>
 
-<!-- API Key Modal -->
-<div class="modal-overlay" id="apiKeyModal">
+<!-- Wallet Install Modal -->
+<div class="modal-overlay" id="walletModal">
   <div class="modal-box">
-    <div class="modal-title">Connect AI Assistant</div>
+    <div class="modal-title">Injinary Wallet Required</div>
     <div class="modal-desc">
       BMC Edit works fully without AI — canvas editing, saving, and PDF export are always available.<br><br>
-      To enable AI coaching, enter your Claude API key below. The key is stored securely on your machine and is only sent to Anthropic's API.
-      Get one at <b>console.anthropic.com</b>.
+      To enable AI coaching, install the <b>Injinary Wallet</b> browser extension. It manages your AI provider keys and billing — BMC Edit never sees your API key.
     </div>
-    <input class="modal-input" id="apiKeyInput" type="password" placeholder="sk-ant-api03-…">
     <div class="modal-actions">
-      <button class="modal-btn" onclick="closeApiKeyModal()">Cancel</button>
-      <button class="modal-btn primary" onclick="saveApiKey()">Activate AI</button>
+      <button class="modal-btn" onclick="closeWalletModal()">Continue without AI</button>
+      <button class="modal-btn primary" onclick="recheckWallet()">Check Again</button>
     </div>
   </div>
 </div>
@@ -1256,11 +1254,202 @@ const BLOCKS = [
 const BLOCK_LABELS = {};
 BLOCKS.forEach(b => BLOCK_LABELS[b.key] = b.label);
 
+// ── AI logic (ported from server.py) ──
+const EMPTY_CANVAS = { title: 'Untitled Canvas', company_name: '', blocks: {} };
+BLOCKS.forEach(b => EMPTY_CANVAS.blocks[b.key] = []);
+
+const BLOCK_DESCRIPTIONS = {
+  key_partners: 'Who are the key partners and suppliers needed to make the business model work?',
+  key_activities: 'What key activities does the value proposition require?',
+  key_resources: 'What key resources does the value proposition require?',
+  value_propositions: 'What value does the company deliver to the customer? Which customer needs are being satisfied?',
+  customer_relationships: 'What type of relationship does each customer segment expect?',
+  channels: 'Through which channels do customer segments want to be reached?',
+  customer_segments: 'For whom is the company creating value? Who are the most important customers?',
+  cost_structure: 'What are the most important costs inherent in the business model?',
+  revenue_streams: 'For what value are customers really willing to pay?',
+};
+
+const ACTION_INSTRUCTIONS = {
+  challenge: 'Your task is to CHALLENGE the founder\'s assumptions. Ask tough questions, point out risks, identify weak spots, and highlight contradictions. Do NOT suggest new ideas or alternatives — only question what is there. Be concise (max 6 points). If a section is empty, challenge why.',
+  ideate: 'Your task is to IDEATE — suggest concrete, actionable ideas. Be specific, not generic. Tailor suggestions to what\'s already in the canvas. Use bullet points with short explanations. Suggest 4–6 ideas. If the section is empty, suggest starter ideas based on the rest of the canvas.',
+  educate: 'Your task is to EDUCATE — explain this section of the Business Model Canvas to someone who may not be familiar with it. Use plain language with real-world examples. Avoid jargon. Be encouraging. Keep explanations concise but insightful.',
+};
+
+const DEFAULT_SYSTEM = 'You are an experienced business strategist acting as a Business Model Canvas coach for early-stage founders.';
+
+const PERSONA_GENERATION_PROMPT = `You are a product design assistant specializing in AI coach personas.
+
+Your task is to generate a complete BMC Coach Persona for {name}, designed for early-stage founders.
+
+You MUST output ONLY a valid JSON object (no markdown fences, no commentary) with these exact fields:
+
+{
+  "id": "lowercase_surname",
+  "name": "Full Name",
+  "title": "The [Archetype]",
+  "tone": "2-4 word tone description",
+  "emoji": "single emoji capturing their energy",
+  "tagline": "One punchy sentence — their essence without being reverent",
+  "thinkingVerbs": ["6 loading-state verbs ending in '...', reflecting HOW this person thinks"],
+  "achievements": ["5 bullet points — real, readable, slightly irreverent, not a dry LinkedIn bio"],
+  "vibe": "2-3 sentences in second person telling the user what it feels like to be coached by this person. Be honest about their edges.",
+  "systemPrompt": "The full system prompt (see structure below)"
+}
+
+## SYSTEM PROMPT STRUCTURE
+
+The systemPrompt field must contain all of these sections as a single string with \\n separators:
+
+**Character & Voice** — Who this person is, what shaped them, how they speak. 3-5 sentences. Include one distinctive speech pattern or verbal habit.
+
+**Coaching Philosophy** — Their core belief about what makes a Business Model Canvas succeed or fail. What they optimize for. What they're allergic to.
+
+**How You Coach Each Block** — For each of these 9 BMC blocks, write one specific coaching prompt in their voice:
+- Key Partners, Key Activities, Key Resources, Value Propositions, Customer Relationships, Channels, Customer Segments, Cost Structure, Revenue Streams
+
+**Tone Rules** — 8-10 specific behavioral rules. Include what they say vs never say, how they handle vagueness, how they respond to struggle, one unusual quirk.
+
+**What You Never Do** — 4 hard constraints this persona explicitly avoids.
+
+**Signature Phrases** — 4 phrases grounded in their real documented speech patterns, adapted for coaching.
+
+The systemPrompt must start with "You are [Name]..." and be usable as-is in a production app.
+
+## QUALITY CONSTRAINTS
+
+- The thinking verbs must be completely distinct from these already-used sets:
+  Chouinard: Questioning, Reflecting, Sitting with this, Tracing back, Unearthing, Weighing
+  Burns: Listening, Seeing you, Getting real, Checking in, Pushing through, Connecting
+  Hastings: Stress-testing, Falsifying, Modelling, Isolating, Pressure-checking, Deriving
+  Nooyi: Mapping dependencies, Probing, Interrogating, Tracing logic, Constructing, Stress-testing
+- Every coaching prompt must sound unmistakably like {name} — not generic.
+- The profile (tagline, achievements, vibe) should be punchy and human, not an executive bio.
+- Do not use: synergy, pivot, disrupt, leverage, empower, unlock (unless in their actual documented speech).
+
+Output ONLY the JSON object. No markdown fences. No explanation.`;
+
+function stripHtml(text) { return text.replace(/<[^>]+>/g, '').trim(); }
+
+function buildContext(data, cellKey) {
+  const company = data.company_name || '';
+  const title = data.title || 'Untitled';
+  const lines = [];
+  if (company) lines.push('Company: ' + company);
+  lines.push('Canvas: ' + title + '\n');
+
+  if (cellKey && data.blocks && data.blocks[cellKey]) {
+    const label = BLOCK_LABELS[cellKey] || cellKey;
+    const desc = BLOCK_DESCRIPTIONS[cellKey] || '';
+    const items = data.blocks[cellKey];
+    lines.push('## ' + label);
+    if (desc) lines.push('(' + desc + ')');
+    if (items.length) {
+      items.forEach(it => { const clean = stripHtml(it); if (clean) lines.push('- ' + clean); });
+    } else {
+      lines.push('(empty — no items yet)');
+    }
+  } else {
+    for (const [key, label] of Object.entries(BLOCK_LABELS)) {
+      const items = (data.blocks || {})[key] || [];
+      const desc = BLOCK_DESCRIPTIONS[key] || '';
+      lines.push('## ' + label);
+      if (desc) lines.push('(' + desc + ')');
+      if (items.length) {
+        items.forEach(it => { const clean = stripHtml(it); if (clean) lines.push('- ' + clean); });
+      } else {
+        lines.push('(empty)');
+      }
+      lines.push('');
+    }
+  }
+  return lines.join('\n');
+}
+
+function buildAIMessages(action, cellKey, canvasData, personaPrompt) {
+  const context = buildContext(canvasData, cellKey);
+  const target = cellKey ? (BLOCK_LABELS[cellKey] || cellKey) : 'the entire canvas';
+
+  if (action === 'ideate_name') {
+    const company = canvasData.company_name || '';
+    const base = personaPrompt || DEFAULT_SYSTEM;
+    const system = base + '\n\nYour task is to suggest 5–8 company/product name ideas. For each, give the name and a one-line rationale. Be creative and varied. Use bullet points.';
+    const user = company
+      ? `The current working name is "${company}". Suggest alternatives or variations based on this canvas:\n\n${context}`
+      : `Suggest company/product name ideas based on this canvas:\n\n${context}`;
+    return { system, user };
+  }
+
+  const base = personaPrompt || DEFAULT_SYSTEM;
+  const instruction = ACTION_INSTRUCTIONS[action];
+  const system = base + '\n\n' + instruction;
+  const verbs = { challenge: 'Challenge', ideate: 'Generate ideas for', educate: 'Explain' };
+  const user = verbs[action] + ' ' + target + ':\n\n' + context;
+  return { system, user };
+}
+
+function buildPersonaMessages(name) {
+  const system = PERSONA_GENERATION_PROMPT.replace(/\{name\}/g, name);
+  const user = 'Create a Business Model Canvas coaching persona for: ' + name;
+  return { system, user };
+}
+
+// ── Injinary Wallet ──
+let walletConnection = null;
+
+function showWalletInstallPrompt() {
+  document.getElementById('walletModal').classList.add('open');
+}
+function closeWalletModal() {
+  document.getElementById('walletModal').classList.remove('open');
+}
+async function recheckWallet() {
+  if (window.injinaryWallet) {
+    closeWalletModal();
+    const connected = await connectWallet();
+    if (connected) enableAI();
+  } else {
+    toast('Injinary Wallet not detected — please install the extension');
+  }
+}
+
+async function connectWallet() {
+  if (!window.injinaryWallet) { showWalletInstallPrompt(); return false; }
+  try {
+    walletConnection = await window.injinaryWallet.connect({
+      appName: 'BMC Edit',
+      requestedProviders: ['anthropic'],
+      requestedBudget: { amount: 500, period: 'monthly' },
+    });
+    return true;
+  } catch (err) {
+    toast('Wallet connection failed: ' + err.message);
+    return false;
+  }
+}
+
+async function callAI(systemPrompt, userPrompt) {
+  if (!walletConnection) {
+    const connected = await connectWallet();
+    if (!connected) throw new Error('No wallet connection');
+  }
+  const response = await walletConnection.complete({
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
+    ],
+    provider: 'anthropic',
+    model: 'claude-sonnet-4-20250514',
+    maxTokens: 1024,
+  });
+  return response.content;
+}
+
 // ── State ──
-let currentPath = null;
+let currentFileName = null;
+let fileHandle = null; // File System Access API handle (Chrome/Edge)
 let dirty = false;
-let canvasData = { title: 'Untitled Canvas', company_name: '', blocks: {} };
-BLOCKS.forEach(b => canvasData.blocks[b.key] = []);
+let canvasData = JSON.parse(JSON.stringify(EMPTY_CANVAS));
 
 // ── Undo / Redo ──
 const undoStack = [];
@@ -1483,11 +1672,20 @@ function loadCanvasData(data) {
 }
 
 // ── Dirty state ──
+let autoSaveTimer;
 function markDirty() {
   dirty = true;
   document.getElementById('unsavedDot').classList.add('show');
   updateTitle();
   debouncedPushUndo();
+  // Auto-save to localStorage
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(() => {
+    try {
+      localStorage.setItem('bmc-autosave', JSON.stringify(getCanvasJSON()));
+      localStorage.setItem('bmc-autosave-name', currentFileName || '');
+    } catch {}
+  }, 1000);
 }
 function markClean() {
   dirty = false;
@@ -1495,77 +1693,134 @@ function markClean() {
   updateTitle();
 }
 function updateTitle() {
-  const name = currentPath ? currentPath.split('/').pop() : 'Untitled';
+  const name = currentFileName || 'Untitled';
   document.title = (dirty ? '\u25CF ' : '') + name + ' \u2014 BMC Edit';
 }
 function updateFilePath() {
-  document.getElementById('filePath').textContent = currentPath || 'No file \u2014 unsaved';
+  document.getElementById('filePath').textContent = currentFileName || 'Unsaved';
   updateTitle();
 }
 
-// ── API calls ──
-async function api(method, path, body) {
-  const opts = { method, headers: { 'Content-Type': 'application/json' } };
-  if (body) opts.body = JSON.stringify(body);
-  const res = await fetch(path, opts);
-  return res.json();
+// ── File actions ──
+function downloadJSON(data, fileName) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
-// ── File actions ──
-async function newCanvas() {
+function newCanvas() {
   if (dirty && !confirm('Discard unsaved changes?')) return;
-  const res = await api('POST', '/api/new');
-  loadCanvasData(res.data);
-  currentPath = null;
+  loadCanvasData(JSON.parse(JSON.stringify(EMPTY_CANVAS)));
+  currentFileName = null;
+  fileHandle = null;
   markClean();
   updateFilePath();
+  localStorage.removeItem('bmc-autosave');
   toast('New canvas created');
 }
+
 async function openFile() {
   if (dirty && !confirm('Discard unsaved changes?')) return;
-  showLoading(true);
-  const res = await api('POST', '/api/open');
-  showLoading(false);
-  if (res.cancelled) return;
-  if (res.error) { toast('Error: ' + res.error); return; }
-  loadCanvasData(res.data);
-  currentPath = res.path;
-  markClean();
-  updateFilePath();
-  toast('Opened');
+  try {
+    // Try File System Access API (Chrome/Edge)
+    if (window.showOpenFilePicker) {
+      const [handle] = await window.showOpenFilePicker({
+        types: [{ description: 'JSON files', accept: { 'application/json': ['.json'] } }],
+        multiple: false,
+      });
+      const file = await handle.getFile();
+      const text = await file.text();
+      const data = JSON.parse(text);
+      loadCanvasData(data);
+      currentFileName = file.name;
+      fileHandle = handle;
+      markClean();
+      updateFilePath();
+      addRecentFile(file.name);
+      toast('Opened ' + file.name);
+      return;
+    }
+  } catch (err) {
+    if (err.name === 'AbortError') return; // user cancelled
+  }
+  // Fallback: <input type="file">
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json,application/json';
+  input.onchange = async () => {
+    const file = input.files[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      loadCanvasData(data);
+      currentFileName = file.name;
+      fileHandle = null;
+      markClean();
+      updateFilePath();
+      addRecentFile(file.name);
+      toast('Opened ' + file.name);
+    } catch { toast('Invalid JSON file'); }
+  };
+  input.click();
 }
-async function openRecent(path) {
-  if (dirty && !confirm('Discard unsaved changes?')) return;
-  closeRecent();
-  const res = await api('POST', '/api/open-path', { path });
-  if (res.error) { toast('Error: ' + res.error); return; }
-  loadCanvasData(res.data);
-  currentPath = res.path;
-  markClean();
-  updateFilePath();
-  toast('Opened');
-}
+
 async function saveFile() {
   const data = getCanvasJSON();
   canvasData = data;
-  if (!currentPath) return saveFileAs();
-  const res = await api('POST', '/api/save', { path: currentPath, data });
-  if (res.error) { toast('Error: ' + res.error); return; }
-  markClean();
-  toast('Saved');
+  // Try to write back to the same file handle (Chrome/Edge)
+  if (fileHandle) {
+    try {
+      const writable = await fileHandle.createWritable();
+      await writable.write(JSON.stringify(data, null, 2));
+      await writable.close();
+      markClean();
+      toast('Saved');
+      return;
+    } catch (err) {
+      if (err.name === 'AbortError') return;
+      // Fall through to saveFileAs
+    }
+  }
+  return saveFileAs();
 }
+
 async function saveFileAs() {
   const data = getCanvasJSON();
   canvasData = data;
-  showLoading(true);
-  const res = await api('POST', '/api/save-as', { data });
-  showLoading(false);
-  if (res.cancelled) return;
-  if (res.error) { toast('Error: ' + res.error); return; }
-  currentPath = res.path;
+  const suggestedName = currentFileName || (data.title || 'canvas').replace(/[^a-zA-Z0-9_-]/g, '_') + '.json';
+  try {
+    // Try File System Access API (Chrome/Edge)
+    if (window.showSaveFilePicker) {
+      const handle = await window.showSaveFilePicker({
+        suggestedName,
+        types: [{ description: 'JSON files', accept: { 'application/json': ['.json'] } }],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(JSON.stringify(data, null, 2));
+      await writable.close();
+      fileHandle = handle;
+      currentFileName = handle.name;
+      markClean();
+      updateFilePath();
+      addRecentFile(handle.name);
+      toast('Saved as ' + handle.name);
+      return;
+    }
+  } catch (err) {
+    if (err.name === 'AbortError') return;
+  }
+  // Fallback: download
+  downloadJSON(data, suggestedName);
+  currentFileName = suggestedName;
   markClean();
   updateFilePath();
-  toast('Saved as ' + res.path.split('/').pop());
+  addRecentFile(suggestedName);
+  toast('Downloaded ' + suggestedName);
 }
 async function exportPDF() {
   toast('Generating PDF\u2026');
@@ -1681,11 +1936,23 @@ function fmtClearHighlightInRange(range) {
   });
 }
 
-// ── Recent ──
-async function toggleRecent() {
+// ── Recent files (localStorage) ──
+function getRecentFiles() {
+  try { return JSON.parse(localStorage.getItem('bmc-recent-files') || '[]'); }
+  catch { return []; }
+}
+function addRecentFile(name) {
+  let recent = getRecentFiles();
+  recent = recent.filter(r => r.name !== name);
+  recent.unshift({ name, time: Date.now() });
+  recent = recent.slice(0, 12);
+  localStorage.setItem('bmc-recent-files', JSON.stringify(recent));
+}
+
+function toggleRecent() {
   const dd = document.getElementById('recentDropdown');
   if (dd.classList.contains('open')) { closeRecent(); return; }
-  const recent = await api('GET', '/api/recent');
+  const recent = getRecentFiles();
   dd.innerHTML = '<div class="recent-dropdown-header">Recent files</div>';
   if (recent.length === 0) {
     dd.innerHTML += '<div class="recent-empty">No recent files</div>';
@@ -1693,8 +1960,7 @@ async function toggleRecent() {
     recent.forEach(r => {
       const item = document.createElement('div');
       item.className = 'recent-item';
-      item.innerHTML = `<div class="recent-item-name">${escHtml(r.name)}</div><div class="recent-item-path">${escHtml(r.path)}</div>`;
-      item.onclick = () => openRecent(r.path);
+      item.innerHTML = `<div class="recent-item-name">${escHtml(r.name)}</div>`;
       dd.appendChild(item);
     });
   }
@@ -2186,18 +2452,24 @@ async function generatePersona() {
   const btn = document.getElementById('personaCreateBtn');
   const name = input.value.trim();
   if (!name) { toast('Enter a name'); return; }
-  if (!aiHasKey) { openApiKeyModal(); return; }
+  if (!walletConnection) {
+    if (!window.injinaryWallet) { showWalletInstallPrompt(); return; }
+    const connected = await connectWallet();
+    if (!connected) return;
+  }
 
   btn.disabled = true;
   btn.textContent = 'Creating…';
 
   try {
-    const res = await api('POST', '/api/generate-persona', { name });
-    if (res.error) {
-      toast('Error: ' + res.error);
-      return;
+    const { system, user } = buildPersonaMessages(name);
+    const result = await callAI(system, user);
+    // Parse JSON from response
+    let text = result.trim();
+    if (text.startsWith('```')) {
+      text = text.replace(/^```(?:json)?\s*/, '').replace(/\s*```\s*$/, '');
     }
-    const p = res.persona;
+    const p = JSON.parse(text);
     // Ensure required fields
     if (!p.id || !p.name || !p.systemPrompt) {
       toast('Invalid persona generated — try again');
@@ -2229,25 +2501,21 @@ async function generatePersona() {
 // ── AI Mode ──
 // ═══════════════════════════════════════
 let aiEnabled = false;
-let aiHasKey = false;
 const aiHistory = [];
 
 async function toggleAI() {
   if (!aiEnabled) {
-    // Check for server-side key
-    const res = await api('GET', '/api/has-key');
-    if (res.has_key) {
-      aiHasKey = true;
-      enableAI();
-    } else {
-      openApiKeyModal();
+    if (!window.injinaryWallet) {
+      showWalletInstallPrompt();
+      return;
     }
+    const connected = await connectWallet();
+    if (connected) enableAI();
   } else {
     const sidebar = document.getElementById('aiSidebar');
     if (sidebar.classList.contains('open')) {
       sidebar.classList.remove('open');
     } else {
-      // Reset to default position on reopen
       sidebar.style.left = '';
       sidebar.style.top = '';
       sidebar.style.right = '24px';
@@ -2264,24 +2532,6 @@ function enableAI() {
   document.getElementById('aiSidebar').classList.add('open');
   renderPersonaGrid();
   toast('AI Assistant enabled');
-}
-
-function openApiKeyModal() {
-  document.getElementById('apiKeyModal').classList.add('open');
-  document.getElementById('apiKeyInput').value = '';
-  document.getElementById('apiKeyInput').focus();
-}
-function closeApiKeyModal() {
-  document.getElementById('apiKeyModal').classList.remove('open');
-}
-async function saveApiKey() {
-  const key = document.getElementById('apiKeyInput').value.trim();
-  if (!key) { toast('Please enter an API key'); return; }
-  const res = await api('POST', '/api/set-key', { key });
-  if (res.error) { toast('Error saving key'); return; }
-  aiHasKey = true;
-  closeApiKeyModal();
-  enableAI();
 }
 
 // Drag-and-drop from AI chips
@@ -2306,7 +2556,11 @@ const ACTION_LABELS = { challenge: 'Challenge', ideate: 'Ideate', educate: 'Educ
 const ACTION_ICONS = { challenge: '\u26A0', ideate: '\u2733', educate: '\u2139', ideate_name: '\u2733' };
 
 async function runAI(action, cellKey) {
-  if (!aiHasKey) { openApiKeyModal(); return; }
+  if (!walletConnection) {
+    if (!window.injinaryWallet) { showWalletInstallPrompt(); return; }
+    const connected = await connectWallet();
+    if (!connected) return;
+  }
 
   // Ensure sidebar is open and on response tab
   document.getElementById('aiSidebar').classList.add('open');
@@ -2325,28 +2579,18 @@ async function runAI(action, cellKey) {
   try {
     const data = getCanvasJSON();
     const persona = getSelectedPersona();
-    const res = await api('POST', '/api/ai', {
-      action,
-      cell_key: cellKey || null,
-      data,
-      persona_prompt: persona ? persona.systemPrompt : '',
-    });
+    const { system, user } = buildAIMessages(action, cellKey || null, data, persona ? persona.systemPrompt : '');
+    const result = await callAI(system, user);
 
     document.getElementById('aiLoading').classList.remove('active');
     document.querySelectorAll('.ai-whole-btn').forEach(b => b.disabled = false);
-
-    if (res.error) {
-      toast('AI error: ' + res.error);
-      document.getElementById('aiEmptyState').style.display = 'block';
-      return;
-    }
 
     // Show response
     const pName = persona ? `${persona.emoji} ${persona.name}` : '';
     const metaSuffix = pName ? ` <span style="color:var(--text-secondary);font-weight:400">via ${escHtml(pName)}</span>` : '';
     document.getElementById('aiResponseMeta').innerHTML =
       `<strong>${ACTION_ICONS[action]} ${ACTION_LABELS[action]}</strong> &mdash; ${escHtml(target)}${metaSuffix}`;
-    document.getElementById('aiResponseText').innerHTML = renderMarkdown(res.result);
+    document.getElementById('aiResponseText').innerHTML = renderMarkdown(result);
     document.getElementById('aiResponseContent').style.display = 'block';
 
     // Add to history
@@ -2354,7 +2598,7 @@ async function runAI(action, cellKey) {
       action,
       target,
       cellKey: cellKey || null,
-      result: res.result,
+      result,
       time: new Date().toLocaleTimeString(),
       persona: pName,
     });
@@ -2363,14 +2607,18 @@ async function runAI(action, cellKey) {
   } catch (err) {
     document.getElementById('aiLoading').classList.remove('active');
     document.querySelectorAll('.ai-whole-btn').forEach(b => b.disabled = false);
-    toast('AI request failed');
+    toast('AI error: ' + err.message);
     console.error(err);
     document.getElementById('aiEmptyState').style.display = 'block';
   }
 }
 
 async function aiIdeateName() {
-  if (!aiHasKey) { openApiKeyModal(); return; }
+  if (!walletConnection) {
+    if (!window.injinaryWallet) { showWalletInstallPrompt(); return; }
+    const connected = await connectWallet();
+    if (!connected) return;
+  }
   document.getElementById('aiSidebar').classList.add('open');
   showAITab('response');
   document.getElementById('aiLoading').classList.add('active');
@@ -2380,26 +2628,18 @@ async function aiIdeateName() {
   try {
     const data = getCanvasJSON();
     const persona = getSelectedPersona();
-    const res = await api('POST', '/api/ai', {
-      action: 'ideate_name',
-      data,
-      persona_prompt: persona ? persona.systemPrompt : '',
-    });
+    const { system, user } = buildAIMessages('ideate_name', null, data, persona ? persona.systemPrompt : '');
+    const result = await callAI(system, user);
     document.getElementById('aiLoading').classList.remove('active');
-    if (res.error) {
-      toast('AI error: ' + res.error);
-      document.getElementById('aiEmptyState').style.display = 'block';
-      return;
-    }
     document.getElementById('aiResponseMeta').innerHTML =
       `<strong>\u2733 Name Ideas</strong> &mdash; Company / Product Name`;
-    document.getElementById('aiResponseText').innerHTML = renderMarkdown(res.result);
+    document.getElementById('aiResponseText').innerHTML = renderMarkdown(result);
     document.getElementById('aiResponseContent').style.display = 'block';
-    aiHistory.unshift({ action: 'ideate_name', target: 'Company Name', cellKey: null, result: res.result, time: new Date().toLocaleTimeString() });
+    aiHistory.unshift({ action: 'ideate_name', target: 'Company Name', cellKey: null, result, time: new Date().toLocaleTimeString() });
     renderHistory();
   } catch (err) {
     document.getElementById('aiLoading').classList.remove('active');
-    toast('AI request failed');
+    toast('AI error: ' + err.message);
     document.getElementById('aiEmptyState').style.display = 'block';
   }
 }
@@ -2430,19 +2670,20 @@ function renderHistory() {
   });
 }
 
-// Auto-enable AI if server has a key
+// Auto-enable AI if wallet is available
 (async () => {
-  try {
-    const res = await api('GET', '/api/has-key');
-    if (res.has_key) {
-      aiHasKey = true;
+  // Wait briefly for extension content script injection
+  await new Promise(r => setTimeout(r, 300));
+  if (window.injinaryWallet) {
+    try {
+      await connectWallet();
       aiEnabled = true;
       document.body.classList.add('ai-enabled');
       document.body.classList.add('show-help');
       document.getElementById('aiToggleBtn').classList.add('ai-active');
       renderPersonaGrid();
-    }
-  } catch {}
+    } catch {}
+  }
 })();
 
 // ── Keyboard shortcuts ──
@@ -2454,12 +2695,6 @@ document.addEventListener('keydown', e => {
   else if (mod && e.key === 'z') { e.preventDefault(); undo(); }
   if (mod && e.key === 's' && e.shiftKey) { e.preventDefault(); saveFileAs(); }
   else if (mod && e.key === 's') { e.preventDefault(); saveFile(); }
-});
-
-// Enter in API key modal
-document.getElementById('apiKeyInput').addEventListener('keydown', e => {
-  if (e.key === 'Enter') saveApiKey();
-  if (e.key === 'Escape') closeApiKeyModal();
 });
 
 // Enter in persona create input
@@ -2477,6 +2712,21 @@ window.addEventListener('beforeunload', e => {
 renderGrid();
 updateFilePath();
 pushUndo();
+
+// Restore auto-save from localStorage
+try {
+  const saved = localStorage.getItem('bmc-autosave');
+  if (saved) {
+    const data = JSON.parse(saved);
+    const hasContent = data.title !== 'Untitled Canvas' || data.company_name ||
+      Object.values(data.blocks || {}).some(b => b.length > 0);
+    if (hasContent && confirm('Restore your previous session?')) {
+      loadCanvasData(data);
+      currentFileName = localStorage.getItem('bmc-autosave-name') || null;
+      updateFilePath();
+    }
+  }
+} catch {}
 </script>
 </body>
 </html>

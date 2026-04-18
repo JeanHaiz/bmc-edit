@@ -15,8 +15,9 @@ from urllib.parse import parse_qs, urlparse
 RECENT_FILE = Path.home() / ".bmc-edit-recent.json"
 KEY_FILE = Path.home() / ".bmc-edit-key"
 PORT = 8470
+PORT_RANGE = 10  # try ports 8470–8479
 HOST = "127.0.0.1"
-ALLOWED_ORIGIN = f"http://{HOST}:{PORT}"
+ALLOWED_ORIGIN = f"http://{HOST}:{PORT}"  # updated at startup
 MAX_BODY_SIZE = 10 * 1024 * 1024  # 10 MB
 
 EMPTY_CANVAS = {
@@ -41,10 +42,12 @@ EMPTY_CANVAS = {
 def load_api_key() -> str:
     if KEY_FILE.exists():
         try:
-            return KEY_FILE.read_text().strip()
+            key = KEY_FILE.read_text().strip()
+            if key:
+                return key
         except Exception:
-            return ""
-    return ""
+            pass
+    return os.environ.get("ANTHROPIC_API_KEY", "").strip()
 
 
 def save_api_key(key: str):
@@ -96,52 +99,217 @@ def add_recent(filepath: str):
     save_recent(entries)
 
 
-# ── File dialogs (macOS osascript) ──
+# ── Cross-platform file dialogs ──
 
 def _pick_file_open() -> str | None:
-    import subprocess
+    """Show an "open file" dialog. Tries native dialog, falls back to tkinter."""
+    plat = sys.platform
+    if plat == "darwin":
+        path = _osascript_open()
+        if path is not None:
+            return path
+    elif plat == "win32":
+        path = _win_open()
+        if path is not None:
+            return path
+    elif plat.startswith("linux"):
+        path = _linux_open()
+        if path is not None:
+            return path
+    return _tk_open()
 
+
+def _pick_file_save() -> str | None:
+    """Show a "save file" dialog. Tries native dialog, falls back to tkinter."""
+    plat = sys.platform
+    if plat == "darwin":
+        path = _osascript_save()
+        if path is not None:
+            return path
+    elif plat == "win32":
+        path = _win_save()
+        if path is not None:
+            return path
+    elif plat.startswith("linux"):
+        path = _linux_save()
+        if path is not None:
+            return path
+    return _tk_save()
+
+
+# -- macOS (osascript) --
+
+def _osascript_open() -> str | None:
+    import subprocess
     try:
-        result = subprocess.run(
-            [
-                "osascript",
-                "-e",
-                'set theFile to choose file of type {"json", "public.json"} '
-                'with prompt "Open Business Model Canvas"',
-                "-e",
-                "return POSIX path of theFile",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=120,
+        r = subprocess.run(
+            ["osascript", "-e",
+             'set theFile to choose file of type {"json", "public.json"} '
+             'with prompt "Open Business Model Canvas"',
+             "-e", "return POSIX path of theFile"],
+            capture_output=True, text=True, timeout=120,
         )
-        path = result.stdout.strip()
-        return path if path else None
+        return r.stdout.strip() or None
     except Exception:
         return None
 
 
-def _pick_file_save() -> str | None:
+def _osascript_save() -> str | None:
     import subprocess
-
     try:
-        result = subprocess.run(
-            [
-                "osascript",
-                "-e",
-                'set theFile to choose file name default name "canvas.json" '
-                'with prompt "Save Business Model Canvas"',
-                "-e",
-                "return POSIX path of theFile",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=120,
+        r = subprocess.run(
+            ["osascript", "-e",
+             'set theFile to choose file name default name "canvas.json" '
+             'with prompt "Save Business Model Canvas"',
+             "-e", "return POSIX path of theFile"],
+            capture_output=True, text=True, timeout=120,
         )
-        path = result.stdout.strip()
+        path = r.stdout.strip()
         if path and not path.endswith(".json"):
             path += ".json"
-        return path if path else None
+        return path or None
+    except Exception:
+        return None
+
+
+# -- Linux (zenity / kdialog) --
+
+def _linux_open() -> str | None:
+    import subprocess, shutil
+    if shutil.which("zenity"):
+        try:
+            r = subprocess.run(
+                ["zenity", "--file-selection", "--title=Open Business Model Canvas",
+                 "--file-filter=JSON files (*.json) | *.json"],
+                capture_output=True, text=True, timeout=120,
+            )
+            return r.stdout.strip() or None
+        except Exception:
+            pass
+    if shutil.which("kdialog"):
+        try:
+            r = subprocess.run(
+                ["kdialog", "--getopenfilename", ".", "JSON files (*.json)"],
+                capture_output=True, text=True, timeout=120,
+            )
+            return r.stdout.strip() or None
+        except Exception:
+            pass
+    return None
+
+
+def _linux_save() -> str | None:
+    import subprocess, shutil
+    if shutil.which("zenity"):
+        try:
+            r = subprocess.run(
+                ["zenity", "--file-selection", "--save", "--confirm-overwrite",
+                 "--title=Save Business Model Canvas",
+                 "--filename=canvas.json",
+                 "--file-filter=JSON files (*.json) | *.json"],
+                capture_output=True, text=True, timeout=120,
+            )
+            path = r.stdout.strip()
+            if path and not path.endswith(".json"):
+                path += ".json"
+            return path or None
+        except Exception:
+            pass
+    if shutil.which("kdialog"):
+        try:
+            r = subprocess.run(
+                ["kdialog", "--getsavefilename", "canvas.json", "JSON files (*.json)"],
+                capture_output=True, text=True, timeout=120,
+            )
+            path = r.stdout.strip()
+            if path and not path.endswith(".json"):
+                path += ".json"
+            return path or None
+        except Exception:
+            pass
+    return None
+
+
+# -- Windows (PowerShell) --
+
+def _win_open() -> str | None:
+    import subprocess
+    script = (
+        'Add-Type -AssemblyName System.Windows.Forms; '
+        '$d = New-Object System.Windows.Forms.OpenFileDialog; '
+        '$d.Title = "Open Business Model Canvas"; '
+        '$d.Filter = "JSON files (*.json)|*.json"; '
+        'if ($d.ShowDialog() -eq "OK") { $d.FileName }'
+    )
+    try:
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", script],
+            capture_output=True, text=True, timeout=120,
+        )
+        return r.stdout.strip() or None
+    except Exception:
+        return None
+
+
+def _win_save() -> str | None:
+    import subprocess
+    script = (
+        'Add-Type -AssemblyName System.Windows.Forms; '
+        '$d = New-Object System.Windows.Forms.SaveFileDialog; '
+        '$d.Title = "Save Business Model Canvas"; '
+        '$d.Filter = "JSON files (*.json)|*.json"; '
+        '$d.FileName = "canvas.json"; '
+        'if ($d.ShowDialog() -eq "OK") { $d.FileName }'
+    )
+    try:
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", script],
+            capture_output=True, text=True, timeout=120,
+        )
+        path = r.stdout.strip()
+        if path and not path.endswith(".json"):
+            path += ".json"
+        return path or None
+    except Exception:
+        return None
+
+
+# -- Tkinter fallback (all platforms) --
+
+def _tk_open() -> str | None:
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        path = filedialog.askopenfilename(
+            title="Open Business Model Canvas",
+            filetypes=[("JSON files", "*.json")],
+        )
+        root.destroy()
+        return path or None
+    except Exception:
+        return None
+
+
+def _tk_save() -> str | None:
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        path = filedialog.asksaveasfilename(
+            title="Save Business Model Canvas",
+            defaultextension=".json",
+            initialfile="canvas.json",
+            filetypes=[("JSON files", "*.json")],
+        )
+        root.destroy()
+        if path and not path.endswith(".json"):
+            path += ".json"
+        return path or None
     except Exception:
         return None
 
@@ -408,7 +576,13 @@ def handle_generate_persona(body: dict) -> dict:
 # ── HTTP Handler ──
 
 # Read index.html into memory at startup so we don't serve arbitrary files
-_INDEX_HTML = (Path(__file__).parent / "index.html").read_bytes()
+def _resource_path(filename: str) -> Path:
+    """Resolve resource path — supports PyInstaller frozen bundles."""
+    if getattr(sys, "_MEIPASS", None):
+        return Path(sys._MEIPASS) / filename
+    return Path(__file__).parent / filename
+
+_INDEX_HTML = _resource_path("index.html").read_bytes()
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -591,10 +765,43 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 
 def main():
-    server = http.server.HTTPServer((HOST, PORT), Handler)
-    url = f"http://{HOST}:{PORT}"
+    global ALLOWED_ORIGIN
+
+    if "--help" in sys.argv or "-h" in sys.argv:
+        print(
+            "BMC Edit — Local Business Model Canvas Editor\n\n"
+            "Usage: bmc-edit [--no-browser]\n\n"
+            "Options:\n"
+            "  --no-browser   Don't open the browser automatically\n"
+            "  --help, -h     Show this help message\n\n"
+            "API key:\n"
+            "  Set via the browser UI, or:\n"
+            "  - File: ~/.bmc-edit-key (created automatically)\n"
+            "  - Env:  ANTHROPIC_API_KEY\n"
+        )
+        return
+
+    open_browser = "--no-browser" not in sys.argv
+
+    # Try ports in range until one binds
+    server = None
+    bound_port = PORT
+    for p in range(PORT, PORT + PORT_RANGE):
+        try:
+            server = http.server.HTTPServer((HOST, p), Handler)
+            bound_port = p
+            break
+        except OSError:
+            continue
+    if server is None:
+        print(f"\n  Error: Could not bind to ports {PORT}–{PORT + PORT_RANGE - 1}\n")
+        sys.exit(1)
+
+    ALLOWED_ORIGIN = f"http://{HOST}:{bound_port}"
+    url = ALLOWED_ORIGIN
     print(f"\n  BMC Edit → {url}\n")
-    webbrowser.open(url)
+    if open_browser:
+        webbrowser.open(url)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -1,5 +1,5 @@
 import './style.css';
-import { wallet } from './wallet';
+import { wallet, promptInstallIfMissing } from './wallet';
 
 // ── Block definitions ──
 const BLOCKS = [
@@ -159,24 +159,11 @@ function buildPersonaMessages(name) {
 // ── Injinary Wallet ──
 let walletConnection = null;
 
-function showWalletInstallPrompt() {
-  document.getElementById('walletModal').classList.add('open');
-}
-function closeWalletModal() {
-  document.getElementById('walletModal').classList.remove('open');
-}
-async function recheckWallet() {
-  if (await wallet.isAvailable()) {
-    closeWalletModal();
-    const connected = await connectWallet();
-    if (connected) enableAI();
-  } else {
-    toast('Injinary Wallet not detected — please install the extension');
-  }
-}
-
 async function connectWallet() {
-  if (!(await wallet.isAvailable())) { showWalletInstallPrompt(); return false; }
+  // SDK shows an install banner if the extension is missing and returns a
+  // controller; if it returns null the wallet is present and we can connect.
+  const installPrompt = await promptInstallIfMissing({ appName: 'BMC Edit' });
+  if (installPrompt) return false;
   try {
     walletConnection = await wallet.connect({
       appName: 'BMC Edit',
@@ -1215,7 +1202,6 @@ async function generatePersona() {
   const name = input.value.trim();
   if (!name) { toast('Enter a name'); return; }
   if (!walletConnection) {
-    if (!(await wallet.isAvailable())) { showWalletInstallPrompt(); return; }
     const connected = await connectWallet();
     if (!connected) return;
   }
@@ -1267,10 +1253,6 @@ const aiHistory = [];
 
 async function toggleAI() {
   if (!aiEnabled) {
-    if (!(await wallet.isAvailable())) {
-      showWalletInstallPrompt();
-      return;
-    }
     const connected = await connectWallet();
     if (connected) enableAI();
   } else {
@@ -1319,7 +1301,6 @@ const ACTION_ICONS = { challenge: '\u26A0', ideate: '\u2733', educate: '\u2139',
 
 async function runAI(action, cellKey) {
   if (!walletConnection) {
-    if (!(await wallet.isAvailable())) { showWalletInstallPrompt(); return; }
     const connected = await connectWallet();
     if (!connected) return;
   }
@@ -1377,7 +1358,6 @@ async function runAI(action, cellKey) {
 
 async function aiIdeateName() {
   if (!walletConnection) {
-    if (!(await wallet.isAvailable())) { showWalletInstallPrompt(); return; }
     const connected = await connectWallet();
     if (!connected) return;
   }
@@ -1490,8 +1470,8 @@ try {
 
 // Expose handlers used by inline onclick/oninput attributes in index.html.
 Object.assign(window as any, {
-  addItem, aiIdeateName, closePersonaProfile, closeWalletModal, deleteItem,
+  addItem, aiIdeateName, closePersonaProfile, deleteItem,
   exportPDF, fmtBold, fmtClearHighlight, fmtHighlight, generatePersona,
-  markDirty, newCanvas, openFile, openPersonaProfile, recheckWallet, runAI,
+  markDirty, newCanvas, openFile, openPersonaProfile, runAI,
   saveFile, saveFileAs, showAITab, toggleAI, toggleRecent,
 });

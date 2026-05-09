@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "description": "A Business Model Canvas editor with AI coaching — runs entirely in your browser.",
   "private": true,
+  "license": "MIT",
+  "author": "Jean Haizmann",
   "type": "module",
   "scripts": {
     "dev": "vite",

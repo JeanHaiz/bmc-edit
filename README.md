@@ -46,4 +46,4 @@ The site is served at `https://<user>.github.io/bmc-edit/`. To use a custom doma
 
 ## License
 
-MIT
+[MIT](LICENSE) © Jean Haizmann

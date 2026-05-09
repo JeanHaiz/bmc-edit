@@ -1,83 +1,48 @@
 # BMC Edit
 
-A local Business Model Canvas editor with AI coaching — runs entirely on your machine.
+A Business Model Canvas editor with AI coaching — runs entirely in your browser as a static single-page application.
 
 ## Features
 
 - Classic 9-block BMC grid with rich text editing (bold, highlighting)
-- Save/open JSON files locally, recent files list
+- Save/open JSON files via browser file dialogs, auto-save to localStorage
 - PDF export
 - AI coaching: Challenge, Ideate, and Educate actions powered by Claude
 - 4 built-in coaching personas + create custom ones
 - Undo/redo, keyboard shortcuts
-- Zero dependencies — Python standard library only
-
-## Install
-
-### Option 1: pip (recommended)
-
-```
-pipx install bmc-edit
-bmc-edit
-```
-
-Or with pip:
-
-```
-pip install bmc-edit
-bmc-edit
-```
-
-### Option 2: Run from source
-
-```
-git clone https://github.com/JeanHaiz/bmc-edit.git
-cd bmc-edit
-python3 bmc_edit/server.py
-```
-
-### Option 3: Download binary
-
-Download the latest release for your platform from [GitHub Releases](https://github.com/JeanHaiz/bmc-edit/releases). Double-click to run.
+- Built with Vite — deploys cleanly to any static host
 
 ## Usage
 
-Run `bmc-edit` and a browser tab opens automatically at `http://127.0.0.1:8470`.
+The deployed site can be hosted on any static server (GitHub Pages, Netlify, etc.).
 
 - **Canvas editing**: Click any cell to add items. Use the floating toolbar for bold and color highlighting.
-- **Save/Open**: Use the toolbar buttons or `Cmd/Ctrl+S` / `Cmd/Ctrl+O`.
+- **Save/Open**: Use the toolbar buttons or `Cmd/Ctrl+S` / `Cmd/Ctrl+O`. On Chrome/Edge, files save in-place via the File System Access API. Other browsers download a JSON file.
 - **PDF export**: Click the PDF button in the toolbar.
-- **AI features**: Click the AI button to open the coaching panel. You'll need a Claude API key.
-
-### Options
-
-```
-bmc-edit              # start and open browser
-bmc-edit --no-browser # start without opening browser
-bmc-edit --help       # show help
-```
+- **AI features**: Click the AI button to open the coaching panel. Requires the Injinary Wallet extension.
 
 ## AI Setup
 
 AI coaching is optional — the canvas editor works fully without it.
 
-To enable AI features, you need a Claude API key from [console.anthropic.com](https://console.anthropic.com).
+To enable AI features, install the [Injinary Wallet](https://chromewebstore.google.com/detail/injinary-wallet/emnpfdhpjmgbdgmbpcbloncillceljgp) browser extension. The wallet manages your AI provider keys and billing — BMC Edit never sees your API key. The integration uses [`@injinary-wallet/sdk`](https://www.npmjs.com/package/@injinary-wallet/sdk).
 
-The key can be provided in three ways (checked in this order):
+Once the extension is installed, click the AI button and approve the connection when prompted. That's it.
 
-1. **File**: `~/.bmc-edit-key` — created automatically when you enter a key in the browser
-2. **Environment variable**: `ANTHROPIC_API_KEY`
-3. **Browser UI**: Click the AI button and enter your key when prompted
+## Development
 
-Your API key is stored locally on your machine with restricted file permissions (0600) and is only sent directly to Anthropic's API. It never leaves your machine otherwise.
+```bash
+npm install
+npm run dev      # local dev server with HMR
+npm run build    # production build → dist/
+npm run preview  # preview the production build
+```
 
-## Platform Support
+## Deployment
 
-- **macOS**: Full support with native file dialogs
-- **Linux**: File dialogs via zenity, kdialog, or tkinter
-- **Windows**: File dialogs via PowerShell or tkinter
+Pushes to `main` trigger `.github/workflows/deploy.yml`, which builds the project and publishes `dist/` to GitHub Pages. In repo Settings → Pages, set Source to **GitHub Actions**.
 
-Requires Python 3.10 or later.
+The site is served at `https://<user>.github.io/bmc-edit/`. To use a custom domain, change `base` in `vite.config.ts` to `'/'` and add a `CNAME` file under `public/`.
 
 ## License
 

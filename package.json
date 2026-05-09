@@ -12,7 +12,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@injinary-wallet/sdk": "^0.0.2"
+    "@injinary-wallet/sdk": "^0.0.3"
   },
   "devDependencies": {
     "typescript": "^5.6.0",

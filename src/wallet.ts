@@ -1,4 +1,8 @@
-import { createInjinaryWallet, InjinaryWalletError } from '@injinary-wallet/sdk';
+import {
+  createInjinaryWallet,
+  promptInstallIfMissing,
+  InjinaryWalletError,
+} from '@injinary-wallet/sdk';
 
 export const wallet = createInjinaryWallet();
-export { InjinaryWalletError };
+export { promptInstallIfMissing, InjinaryWalletError };

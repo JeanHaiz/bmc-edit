@@ -1,5 +1,7 @@
 # BMC Edit
 
+**Live site:** [https://jeanhaiz.github.io/bmc-edit/](https://jeanhaiz.github.io/bmc-edit/)
+
 A Business Model Canvas editor with AI coaching — runs entirely in your browser as a static single-page application.
 
 ## Features

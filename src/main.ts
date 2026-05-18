@@ -17,7 +17,7 @@ const BLOCK_LABELS = {};
 BLOCKS.forEach(b => BLOCK_LABELS[b.key] = b.label);
 
 // ── AI logic (ported from server.py) ──
-const EMPTY_CANVAS = { title: 'Untitled Canvas', company_name: '', blocks: {} };
+const EMPTY_CANVAS = { title: 'Untitled Canvas', company_name: '', description: '', blocks: {} };
 BLOCKS.forEach(b => EMPTY_CANVAS.blocks[b.key] = []);
 
 const BLOCK_DESCRIPTIONS = {
@@ -96,9 +96,12 @@ function stripHtml(text) { return text.replace(/<[^>]+>/g, '').trim(); }
 function buildContext(data, cellKey) {
   const company = data.company_name || '';
   const title = data.title || 'Untitled';
+  const description = data.description || '';
   const lines = [];
   if (company) lines.push('Company: ' + company);
-  lines.push('Canvas: ' + title + '\n');
+  lines.push('Canvas: ' + title);
+  if (description) lines.push('Business description: ' + description);
+  lines.push('');
 
   if (cellKey && data.blocks && data.blocks[cellKey]) {
     const label = BLOCK_LABELS[cellKey] || cellKey;
@@ -216,6 +219,7 @@ function snapshotState() {
   return JSON.stringify({
     title: document.getElementById('canvasTitle').value || 'Untitled Canvas',
     company_name: document.getElementById('companyName').value || '',
+    description: canvasData.description || '',
     blocks: canvasData.blocks,
   });
 }
@@ -404,6 +408,7 @@ function getCanvasJSON() {
   return {
     title: document.getElementById('canvasTitle').value || 'Untitled Canvas',
     company_name: document.getElementById('companyName').value || '',
+    description: canvasData.description || '',
     blocks: canvasData.blocks,
   };
 }
@@ -411,6 +416,7 @@ function getCanvasJSON() {
 function loadCanvasData(data) {
   canvasData = data;
   if (!canvasData.company_name) canvasData.company_name = '';
+  if (!canvasData.description) canvasData.description = '';
   document.getElementById('canvasTitle').value = data.title || 'Untitled Canvas';
   document.getElementById('companyName').value = data.company_name || '';
   BLOCKS.forEach(b => { if (!canvasData.blocks[b.key]) canvasData.blocks[b.key] = []; });
@@ -469,7 +475,7 @@ function newCanvas() {
   markClean();
   updateFilePath();
   localStorage.removeItem('bmc-autosave');
-  toast('New canvas created');
+  showOnboarding('landing');
 }
 
 async function openFile() {
@@ -1426,6 +1432,474 @@ function renderHistory() {
   }
 })();
 
+// ═══════════════════════════════════════
+// ── Onboarding / wizard ──
+// ═══════════════════════════════════════
+const WIZARD_ORDER = [
+  'value_propositions', 'customer_segments', 'channels', 'customer_relationships',
+  'key_resources', 'key_activities', 'key_partners', 'cost_structure', 'revenue_streams'
+];
+const ONBOARDING_PURPOSE = "BMC Edit is a browser-only Business Model Canvas editor with an optional AI coach. Sketch a business across all 9 cells side-by-side and use the AI to challenge, ideate, or learn — your data never leaves your machine.";
+
+let onboardingState = null;
+let wizardStep = 0;
+let wizardUseAI = false;
+let wizardLatestAI = '';
+
+function isWalletReady() {
+  return aiEnabled && !!walletConnection;
+}
+
+function showOnboarding(state) {
+  onboardingState = state;
+  if (state === 'wizard') {
+    document.getElementById('onboardingOverlay').classList.remove('visible');
+    enterWizardStep();
+  } else {
+    exitWizardMode();
+    document.getElementById('onboardingOverlay').classList.add('visible');
+    renderOnboarding();
+  }
+}
+
+function hideOnboarding() {
+  onboardingState = null;
+  document.getElementById('onboardingOverlay').classList.remove('visible');
+  exitWizardMode();
+  try { localStorage.setItem('bmc-onboarded', '1'); } catch {}
+}
+
+function renderOnboarding() {
+  const panel = document.getElementById('onboardingPanel');
+  if (!panel) return;
+  switch (onboardingState) {
+    case 'landing':     panel.innerHTML = renderLandingHtml();     wireLanding(panel); break;
+    case 'describe':    panel.innerHTML = renderDescribeHtml();    wireDescribe(panel); break;
+    case 'path_choice': panel.innerHTML = renderPathChoiceHtml();  wirePathChoice(panel); break;
+    case 'done':        panel.innerHTML = renderDoneHtml();        wireDone(panel); break;
+  }
+  panel.scrollTop = 0;
+}
+
+function renderLandingHtml() {
+  return `
+    <div class="onb-eyebrow">Welcome to BMC Edit</div>
+    <h1 class="onb-title">Map your business on one page.</h1>
+    <p class="onb-subtitle">${escHtml(ONBOARDING_PURPOSE)}</p>
+    <div class="onb-section-label">Where would you like to start?</div>
+    <div class="onb-actions">
+      <button class="onb-action" data-act="new">
+        <span class="onb-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg></span>
+        <span class="onb-action-body">
+          <div class="onb-action-title">Create a new canvas</div>
+          <div class="onb-action-desc">Describe your business, then step through the 9 cells one at a time.</div>
+        </span>
+      </button>
+      <button class="onb-action" data-act="open">
+        <span class="onb-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></span>
+        <span class="onb-action-body">
+          <div class="onb-action-title">Open an existing canvas</div>
+          <div class="onb-action-desc">Pick up where you left off. Loads a .json file from your machine.</div>
+        </span>
+      </button>
+      <button class="onb-action disabled" data-act="sample" disabled aria-disabled="true">
+        <span class="onb-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>
+        <span class="onb-action-body">
+          <div class="onb-action-title">Open a sample canvas</div>
+          <div class="onb-action-desc">Coming soon — a fully filled example to learn from.</div>
+        </span>
+      </button>
+    </div>
+  `;
+}
+
+function wireLanding(panel) {
+  panel.querySelector('[data-act="new"]').addEventListener('click', () => {
+    showOnboarding('describe');
+  });
+  panel.querySelector('[data-act="open"]').addEventListener('click', async () => {
+    const before = currentFileName;
+    await openFile();
+    if (currentFileName && currentFileName !== before) {
+      hideOnboarding();
+    }
+  });
+}
+
+function renderDescribeHtml() {
+  return `
+    <div class="onb-eyebrow">Step 1 — describe your business</div>
+    <h1 class="onb-title">Tell us about it.</h1>
+    <p class="onb-subtitle">The longer and more specific, the better. Markets, customers, what you sell, how you reach them, what makes you different — anything that helps shape the canvas.</p>
+    <textarea class="onb-textarea" id="onbDescription" placeholder="e.g. We sell a subscription service for small bakeries that automates daily inventory ordering. Customers are owner-operators with 1–3 employees..."></textarea>
+    <div class="onb-hint">Saved with your canvas. The AI coach will use it for better suggestions.</div>
+    <div class="onb-footer">
+      <button class="onb-btn" data-nav="back">Back</button>
+      <div class="onb-footer-right">
+        <button class="onb-btn primary" data-nav="continue">Continue</button>
+      </div>
+    </div>
+  `;
+}
+
+function wireDescribe(panel) {
+  const ta = panel.querySelector('#onbDescription');
+  ta.value = canvasData.description || '';
+  setTimeout(() => ta.focus(), 0);
+  panel.querySelector('[data-nav="back"]').addEventListener('click', () => {
+    canvasData.description = ta.value;
+    showOnboarding('landing');
+  });
+  panel.querySelector('[data-nav="continue"]').addEventListener('click', () => {
+    canvasData.description = ta.value;
+    if (ta.value.trim()) markDirty();
+    wizardStep = 0;
+    wizardLatestAI = '';
+    if (isWalletReady()) {
+      wizardUseAI = true;
+      showOnboarding('wizard');
+    } else {
+      showOnboarding('path_choice');
+    }
+  });
+}
+
+function renderPathChoiceHtml() {
+  return `
+    <div class="onb-eyebrow">Step 2 — pick a flow</div>
+    <h1 class="onb-title">Want AI to help fill the canvas?</h1>
+    <p class="onb-subtitle">The AI coach can suggest entries for each cell based on your description, and review what you write. It runs through the Injinary Wallet browser extension — your API key stays in the wallet, never in this app.</p>
+    <div class="onb-actions">
+      <button class="onb-action" data-act="ai">
+        <span class="onb-action-icon" style="background:var(--ai-soft);color:var(--ai-color)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2a4 4 0 0 1 4 4v1h1a3 3 0 0 1 3 3v1a3 3 0 0 1-3 3h-1v4a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2v-4H7a3 3 0 0 1-3-3v-1a3 3 0 0 1 3-3h1V6a4 4 0 0 1 4-4z"/></svg>
+        </span>
+        <span class="onb-action-body">
+          <div class="onb-action-title">Fill with AI</div>
+          <div class="onb-action-desc">Install / connect the wallet, then get suggestions for each cell.</div>
+        </span>
+      </button>
+      <button class="onb-action" data-act="manual">
+        <span class="onb-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></span>
+        <span class="onb-action-body">
+          <div class="onb-action-title">Fill manually</div>
+          <div class="onb-action-desc">Step through each cell yourself. You can turn on the AI coach later from the toolbar.</div>
+        </span>
+      </button>
+    </div>
+    <div class="onb-footer">
+      <button class="onb-btn" data-nav="back">Back</button>
+    </div>
+  `;
+}
+
+function wirePathChoice(panel) {
+  panel.querySelector('[data-act="ai"]').addEventListener('click', async () => {
+    showLoading(true);
+    const connected = await connectWallet();
+    showLoading(false);
+    if (connected) {
+      enableAI();
+      wizardUseAI = true;
+      wizardStep = 0;
+      showOnboarding('wizard');
+    }
+  });
+  panel.querySelector('[data-act="manual"]').addEventListener('click', () => {
+    wizardUseAI = false;
+    wizardStep = 0;
+    showOnboarding('wizard');
+  });
+  panel.querySelector('[data-nav="back"]').addEventListener('click', () => {
+    showOnboarding('describe');
+  });
+}
+
+function getSampleHint(_key) {
+  // Stub for now — a real example will be plugged in when the sample canvas lands.
+  return 'Sample: coming soon — a worked example will appear here in a future update.';
+}
+
+// ── In-canvas wizard (spotlights the active cell, side card carries the prompt) ──
+function ensureWizardDOM() {
+  if (!document.getElementById('wizardOverlay')) {
+    const o = document.createElement('div');
+    o.id = 'wizardOverlay';
+    o.className = 'wizard-overlay';
+    document.body.appendChild(o);
+  }
+  if (!document.getElementById('wizardCard')) {
+    const c = document.createElement('div');
+    c.id = 'wizardCard';
+    c.className = 'wizard-card';
+    document.body.appendChild(c);
+  }
+}
+
+function enterWizardStep() {
+  ensureWizardDOM();
+  document.body.classList.add('wizard-active');
+
+  const key = WIZARD_ORDER[wizardStep];
+
+  document.querySelectorAll('.block.wizard-current').forEach(b => b.classList.remove('wizard-current'));
+
+  // Guarantee an editable item exists so the user has a caret to type into.
+  if (!canvasData.blocks[key] || canvasData.blocks[key].length === 0) {
+    canvasData.blocks[key] = [''];
+  }
+  renderItems(key);
+
+  const block = document.querySelector(`.block[data-key="${key}"]`);
+  if (block) block.classList.add('wizard-current');
+
+  renderWizardCardContent();
+  wireWizardCard();
+  positionWizardCard();
+
+  window.addEventListener('resize', positionWizardCard);
+
+  // Focus the last item so the user can type immediately.
+  const container = document.getElementById(`items-${key}`);
+  if (container) {
+    const els = container.querySelectorAll('.item-text');
+    if (els.length) {
+      const last = els[els.length - 1] as HTMLElement;
+      setTimeout(() => {
+        last.focus();
+        const range = document.createRange();
+        range.selectNodeContents(last);
+        range.collapse(false);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }, 50);
+    }
+  }
+}
+
+function exitWizardMode() {
+  document.body.classList.remove('wizard-active');
+  document.querySelectorAll('.block.wizard-current').forEach(b => b.classList.remove('wizard-current'));
+  window.removeEventListener('resize', positionWizardCard);
+}
+
+function positionWizardCard() {
+  const block = document.querySelector('.block.wizard-current');
+  const card = document.getElementById('wizardCard');
+  if (!block || !card) return;
+  const rect = (block as HTMLElement).getBoundingClientRect();
+  const cardW = card.offsetWidth || 380;
+  const cardH = card.offsetHeight || 360;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const gap = 16;
+  const margin = 16;
+
+  let left: number;
+  if (rect.right + gap + cardW + margin <= vw) {
+    left = rect.right + gap;
+  } else if (rect.left - gap - cardW - margin >= 0) {
+    left = rect.left - gap - cardW;
+  } else {
+    left = Math.max(margin, (vw - cardW) / 2);
+  }
+
+  let top = rect.top;
+  top = Math.max(margin, Math.min(top, vh - cardH - margin));
+
+  card.style.left = left + 'px';
+  card.style.top = top + 'px';
+}
+
+function renderWizardCardContent() {
+  const card = document.getElementById('wizardCard');
+  if (!card) return;
+  const key = WIZARD_ORDER[wizardStep];
+  const block = BLOCKS.find(b => b.key === key);
+  const label = block ? block.label : key;
+  const desc = BLOCK_DESCRIPTIONS[key] || '';
+  const total = WIZARD_ORDER.length;
+  const progressPct = Math.round(((wizardStep + 1) / total) * 100);
+  const isLast = wizardStep === total - 1;
+
+  const aiBlock = wizardUseAI ? `
+    <div class="wizard-card-ai">
+      <button class="wizard-card-ai-btn" data-ai="ideate">✳ Ideate with AI</button>
+      <button class="wizard-card-ai-btn" data-ai="challenge">⚠ Review with AI</button>
+      <span class="wizard-card-ai-loading" id="wizCardAiLoading" style="display:none"></span>
+    </div>
+    <div class="wizard-card-ai-output" id="wizCardAiOutput">
+      <span class="wizard-card-ai-output-label" id="wizCardAiOutputLabel"></span>
+      <div id="wizCardAiOutputBody"></div>
+      <div class="wizard-card-ai-append-row" id="wizCardAiAppendRow" style="display:none">
+        <button class="wizard-card-ai-append-btn" data-ai="append">Append suggestions as items</button>
+      </div>
+    </div>
+  ` : '';
+
+  card.innerHTML = `
+    <div class="wizard-card-body">
+      <div class="wizard-card-progress">Step ${wizardStep + 1} of ${total} · ${escHtml(label)}</div>
+      <div class="wizard-card-progress-bar"><div class="wizard-card-progress-fill" style="width:${progressPct}%"></div></div>
+      <h2 class="wizard-card-title">${escHtml(label)}</h2>
+      <p class="wizard-card-desc">${escHtml(desc)}</p>
+      <p class="wizard-card-sample">${escHtml(getSampleHint(key))}</p>
+      <div class="wizard-card-hint">Type directly in the highlighted cell. Press Enter for a new bullet.</div>
+      ${aiBlock}
+    </div>
+    <div class="wizard-card-footer">
+      <button class="wizard-card-btn" data-nav="back">${wizardStep === 0 ? 'Back' : '← Previous'}</button>
+      <button class="wizard-card-btn primary" data-nav="next">${isLast ? 'Finish' : 'Next →'}</button>
+    </div>
+  `;
+}
+
+function wireWizardCard() {
+  const card = document.getElementById('wizardCard');
+  if (!card) return;
+  const key = WIZARD_ORDER[wizardStep];
+
+  function trimTrailingEmpty() {
+    const arr = canvasData.blocks[key] || [];
+    while (arr.length && stripHtml(arr[arr.length - 1]) === '') arr.pop();
+    canvasData.blocks[key] = arr;
+    renderItems(key);
+  }
+
+  card.querySelector('[data-nav="back"]').addEventListener('click', () => {
+    trimTrailingEmpty();
+    if (wizardStep === 0) {
+      wizardLatestAI = '';
+      showOnboarding('describe');
+    } else {
+      wizardStep--;
+      wizardLatestAI = '';
+      enterWizardStep();
+    }
+  });
+  card.querySelector('[data-nav="next"]').addEventListener('click', () => {
+    trimTrailingEmpty();
+    if (wizardStep < WIZARD_ORDER.length - 1) {
+      wizardStep++;
+      wizardLatestAI = '';
+      enterWizardStep();
+    } else {
+      loadCanvasData(canvasData);
+      showOnboarding('done');
+    }
+  });
+
+  if (!wizardUseAI) return;
+
+  const aiOutput = card.querySelector('#wizCardAiOutput') as HTMLElement;
+  const aiOutputBody = card.querySelector('#wizCardAiOutputBody') as HTMLElement;
+  const aiOutputLabel = card.querySelector('#wizCardAiOutputLabel') as HTMLElement;
+  const aiAppendRow = card.querySelector('#wizCardAiAppendRow') as HTMLElement;
+  const loadingEl = card.querySelector('#wizCardAiLoading') as HTMLElement;
+
+  async function runStepAI(action) {
+    const buttons = card.querySelectorAll('.wizard-card-ai-btn');
+    buttons.forEach((b: HTMLButtonElement) => b.disabled = true);
+    loadingEl.style.display = 'inline-flex';
+    loadingEl.textContent = action === 'ideate' ? 'Ideating…' : 'Reviewing…';
+    try {
+      const data = getCanvasJSON();
+      const persona = getSelectedPersona();
+      const { system, user } = buildAIMessages(action, key, data, persona ? persona.systemPrompt : '');
+      const result = await callAI(system, user);
+      wizardLatestAI = result;
+      aiOutputLabel.textContent = action === 'ideate' ? 'AI suggestions' : 'AI review';
+      aiOutputBody.innerHTML = renderMarkdown(result);
+      aiOutput.classList.add('visible');
+      aiAppendRow.style.display = action === 'ideate' ? 'block' : 'none';
+      positionWizardCard();
+    } catch (err) {
+      toast('AI error: ' + err.message);
+    } finally {
+      loadingEl.style.display = 'none';
+      buttons.forEach((b: HTMLButtonElement) => b.disabled = false);
+    }
+  }
+
+  card.querySelector('[data-ai="ideate"]').addEventListener('click', () => runStepAI('ideate'));
+  card.querySelector('[data-ai="challenge"]').addEventListener('click', () => runStepAI('challenge'));
+  card.querySelector('[data-ai="append"]').addEventListener('click', () => {
+    const bullets = wizardLatestAI.split('\n')
+      .map(l => l.trim())
+      .filter(l => /^[-*•]\s+/.test(l) || /^\d+\.\s+/.test(l))
+      .map(l => l.replace(/^[-*•]\s+/, '').replace(/^\d+\.\s+/, ''))
+      .map(l => l.replace(/\*\*(.+?)\*\*/g, '$1').replace(/__(.+?)__/g, '$1').replace(/\*(.+?)\*/g, '$1').replace(/(?<!\w)_(.+?)_(?!\w)/g, '$1'))
+      .filter(Boolean);
+    if (!bullets.length) {
+      toast('No bullet suggestions found to append.');
+      return;
+    }
+    const arr = canvasData.blocks[key] || [];
+    if (arr.length && stripHtml(arr[arr.length - 1]) === '') arr.pop();
+    bullets.forEach(b => arr.push(b));
+    canvasData.blocks[key] = arr;
+    renderItems(key);
+    markDirty();
+    toast(`Added ${bullets.length} suggestion${bullets.length === 1 ? '' : 's'}`);
+    positionWizardCard();
+  });
+}
+
+function renderDoneHtml() {
+  return `
+    <div class="onb-eyebrow">All done</div>
+    <h1 class="onb-title">Nice work — you've mapped the whole canvas.</h1>
+    <p class="onb-subtitle">Take it from here: save it for later, share it as a PDF, or have the AI coach review the whole thing.</p>
+    <div class="onb-done-actions">
+      <button class="onb-done-action" data-act="save">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        <div class="onb-done-action-title">Save</div>
+        <div class="onb-done-action-desc">Write a .json to your computer.</div>
+      </button>
+      <button class="onb-done-action" data-act="pdf">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        <div class="onb-done-action-title">Export PDF</div>
+        <div class="onb-done-action-desc">Landscape, ready to share.</div>
+      </button>
+      <button class="onb-done-action" data-act="review">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2a4 4 0 0 1 4 4v1h1a3 3 0 0 1 3 3v1a3 3 0 0 1-3 3h-1v4a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2v-4H7a3 3 0 0 1-3-3v-1a3 3 0 0 1 3-3h1V6a4 4 0 0 1 4-4z"/></svg>
+        <div class="onb-done-action-title">Review with AI</div>
+        <div class="onb-done-action-desc">${wizardUseAI ? 'Open the AI coach.' : 'Connect the wallet and challenge it all.'}</div>
+      </button>
+    </div>
+    <div class="onb-footer">
+      <div></div>
+      <div class="onb-footer-right">
+        <button class="onb-btn" data-nav="close">Back to editor</button>
+      </div>
+    </div>
+  `;
+}
+
+function wireDone(panel) {
+  panel.querySelector('[data-act="save"]').addEventListener('click', async () => {
+    await saveFile();
+    hideOnboarding();
+  });
+  panel.querySelector('[data-act="pdf"]').addEventListener('click', async () => {
+    hideOnboarding();
+    await exportPDF();
+  });
+  panel.querySelector('[data-act="review"]').addEventListener('click', async () => {
+    hideOnboarding();
+    if (!wizardUseAI) {
+      const connected = await connectWallet();
+      if (!connected) return;
+      enableAI();
+    }
+    runAI('challenge');
+  });
+  panel.querySelector('[data-nav="close"]').addEventListener('click', () => {
+    hideOnboarding();
+  });
+}
+
 // ── Keyboard shortcuts ──
 document.addEventListener('keydown', e => {
   const mod = e.metaKey || e.ctrlKey;
@@ -1454,19 +1928,26 @@ updateFilePath();
 pushUndo();
 
 // Restore auto-save from localStorage
+let sessionRestored = false;
 try {
   const saved = localStorage.getItem('bmc-autosave');
   if (saved) {
     const data = JSON.parse(saved);
-    const hasContent = data.title !== 'Untitled Canvas' || data.company_name ||
+    const hasContent = data.title !== 'Untitled Canvas' || data.company_name || data.description ||
       Object.values(data.blocks || {}).some(b => b.length > 0);
     if (hasContent && confirm('Restore your previous session?')) {
       loadCanvasData(data);
       currentFileName = localStorage.getItem('bmc-autosave-name') || null;
       updateFilePath();
+      sessionRestored = true;
     }
   }
 } catch {}
+
+// First-run: show landing if we haven't restored a session and the user has never been onboarded.
+if (!sessionRestored && !localStorage.getItem('bmc-onboarded')) {
+  showOnboarding('landing');
+}
 
 // Expose handlers used by inline onclick/oninput attributes in index.html.
 Object.assign(window as any, {
